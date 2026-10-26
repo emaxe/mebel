@@ -3,9 +3,12 @@ import { build3D } from './build3d.js';
 import { toCSV, toDXF } from './export.js';
 import { autoFix, kinProblems } from './autofix.js';
 import { FILL_LABELS, rulesOf, makePreset, normalize, fillItems, innerH, autoShelves, stepShelves, autoDrawers, packDrawers, redistribute, fitSections, clamp } from './rules.js';
-import { loadCatalog, saveCatalog, DEFAULT_CATALOG } from './catalog.js';
-import { loadProjects, saveProjects, newId, uniqueName, projectFile, parseProjectFile, PROJECTS_KEY, CURRENT_KEY, LEGACY_KEY, NAME_KEY } from './projects.js';
-import { putThumb, getThumb, delThumb } from './thumbs.js';
+import { loadCatalog, saveCatalog, DEFAULT_CATALOG, CATALOG_KEY, catalogHooks } from './catalog.js';
+import { loadProjects, saveProjects, newId, uniqueName, projectFile, parseProjectFile, hooks, PROJECTS_KEY, CURRENT_KEY, LEGACY_KEY, NAME_KEY } from './projects.js';
+import { putThumb, getThumb, getLocalThumb, delThumb, setRemote } from './thumbs.js';
+import { createApi } from './api.js';
+import { createSync } from './sync.js';
+import { initAccount } from './account.js';
 
 const stage = document.querySelector('three-d-stage');
 const { THREE } = await stage.ready;
@@ -24,6 +27,7 @@ const usePlaceholder = () => { placeholder = true; cur = newId(); db[cur] = { na
 if (!cur) usePlaceholder();
 let P = normalize(db[cur].P);
 let sel = 0, model, spec, outline;
+let sync = null, account = null; // сервер необязателен: без него приложение остаётся локальным
 const savedEl = document.getElementById('saved');
 let savedTimer;
 const save = () => {
@@ -464,7 +468,7 @@ const saveThumbNow = () => {
   clearTimeout(thumbTimer);
   if (placeholder || !spec || !db[cur]) return;
   const id = cur;
-  try { shot(360).toBlob(b => b && putThumb(id, b), 'image/jpeg', 0.8); } catch { /* без миниатюры карточка покажет заглушку */ }
+  try { shot(360).toBlob(b => b && putThumb(id, b).then(() => sync && sync.markThumb(id)), 'image/jpeg', 0.8); } catch { /* без миниатюры карточка покажет заглушку */ }
 };
 const scheduleThumb = () => { clearTimeout(thumbTimer); thumbTimer = setTimeout(saveThumbNow, 1500); };
 const openProd = hash => {
@@ -523,16 +527,16 @@ const info = (title, text) => { const b = el('div', 'dbody'); b.append(el('p', '
 // ── проекты
 const typeLabel = k => (TYPES.find(t => t[0] === k) || ['', ''])[1];
 const TYPE_INFO = { wardrobe: 'Штанги, полки, ящики; распашные двери или купе', rack: 'Открытые полки без дверей', nightstand: 'Невысокая тумба: ящики, полки, дверь', dresser: 'Широкая стопка ящиков', tv: 'Низкая и широкая, с нишами и ящиками' };
-const projDlg = document.getElementById('projDlg'), pm = document.getElementById('pm'), xm = document.getElementById('xm');
+const projDlg = document.getElementById('projDlg'), pm = document.getElementById('pm'), xm = document.getElementById('xm'), am = document.getElementById('am');
 const keepColors = () => ({ bodyColor: P.bodyColor, bodyName: P.bodyName, frontColor: P.frontColor, frontName: P.frontName, metalColor: P.metalColor });
 function drawHeader() {
   document.getElementById('pname').textContent = db[cur].name;
   document.getElementById('tbadge').textContent = typeLabel(P.type);
 }
 /** Закрыть меню шапки и меню карточек. */
-function closeMenus() { [pm, xm, ...projDlg.querySelectorAll('.menu')].forEach(m => (m.hidden = true)); }
+function closeMenus() { [pm, xm, am, ...projDlg.querySelectorAll('.menu')].forEach(m => (m.hidden = true)); }
 const toggleMenu = (m, e) => { e.stopPropagation(); const was = m.hidden; closeMenus(); m.hidden = !was; };
-addEventListener('click', e => { if (![pm, xm].some(m => m.contains(e.target)) && !e.target.closest('.dots')) closeMenus(); });
+addEventListener('click', e => { if (![pm, xm, am].some(m => m.contains(e.target)) && !e.target.closest('.dots')) closeMenus(); });
 document.getElementById('pmenu').onclick = e => toggleMenu(pm, e);
 document.getElementById('xmenu').onclick = e => toggleMenu(xm, e);
 
@@ -560,6 +564,8 @@ const fileName = id => db[id].name.replace(/[\\/:*?"<>|]+/g, '_') + '.json';
 const PM = {
   async rename(id = cur) { const n = await askText('Название проекта', db[id].name); if (n) { db[id].name = n; if (id === cur) save(); else saveProjects(db, cur); drawHeader(); if (projDlg.open) drawProjDlg(); } },
   async saveas(id = cur) { if (id === cur) save(); const n = await askText('Дублировать проект', uniqueName(db, db[id].name)); if (n) addProject(n, JSON.parse(JSON.stringify(db[id].P))); },
+  share(id = cur) { account && account.openShare(id); },
+  versions(id = cur) { account && account.openVersions(id); },
   reset() { snap(); P = makePreset(P.type); sel = 0; drawAll(); render(true); },
   export(id = cur) { if (id === cur) save(); download(projectFile(db, id), fileName(id), 'application/json'); },
   async del(id = cur) {
@@ -570,7 +576,7 @@ const PM = {
       if (Object.keys(db).length) openProject(Object.keys(db)[0], true);
       else { // удалён последний проект: чистим и старый ключ, иначе loadProjects вернёт его обратно
         for (const k of [PROJECTS_KEY, CURRENT_KEY, LEGACY_KEY, NAME_KEY]) try { localStorage.removeItem(k); } catch { /* ничего */ }
-        usePlaceholder(); openProject(cur, true); showProjects();
+        usePlaceholder(); openProject(cur, true); showProjects(); sync && sync.touch();
       }
     } else saveProjects(db, cur);
     if (projDlg.open) drawProjDlg();
@@ -619,10 +625,10 @@ function drawProjectList() {
     const list = Object.entries(db).filter(([, p]) => !word || p.name.toLowerCase().includes(word)).sort((a, b) => b[1].updated - a[1].updated);
     list.forEach(([id, p]) => {
       const c = el('div', 'pcard' + (id === cur ? ' cur' : '')), pic = el('div', 'pic', '▭');
-      const meta = el('div', 'meta'); meta.append(el('div', 'nm', p.name), el('div', 'sm', [typeLabel(p.P.type), sizeOf(p.P), fmtDate(p.updated)].filter(Boolean).join(' · ')));
+      const meta = el('div', 'meta'); meta.append(el('div', 'nm', p.name), el('div', 'sm', [typeLabel(p.P.type), sizeOf(p.P), fmtDate(p.updated), sync && sync.user && sync.isDirty(id) ? '☁ ждёт отправки' : ''].filter(Boolean).join(' · ')));
       const dots = el('button', 'dots', '⋯'); dots.title = 'Действия'; dots.setAttribute('aria-label', 'Действия с проектом');
       const menu = el('div', 'menu'); menu.hidden = true;
-      [['Открыть', () => (id === cur ? projDlg.close() : openProject(id))], ['Дублировать…', () => PM.saveas(id)], ['Переименовать…', () => PM.rename(id)], ['Экспорт .json', () => PM.export(id)], ['Удалить…', () => PM.del(id)]].forEach(([l, fn]) => {
+      [['Открыть', () => (id === cur ? projDlg.close() : openProject(id))], ['Дублировать…', () => PM.saveas(id)], ['Переименовать…', () => PM.rename(id)], ['Ссылка для просмотра…', () => PM.share(id)], ['История версий…', () => PM.versions(id)], ['Экспорт .json', () => PM.export(id)], ['Удалить…', () => PM.del(id)]].forEach(([l, fn]) => {
         const b = el('button', '', l); b.onclick = e => { e.stopPropagation(); closeMenus(); fn(); }; menu.append(b);
       });
       dots.onclick = e => toggleMenu(menu, e);
@@ -734,3 +740,57 @@ void SNAPS;
 drawAll();
 render(true);
 if (placeholder) showProjects();
+
+// ── аккаунт и синхронизация: проекты, справочник и миниатюры уходят на сервер, остальное работает как раньше
+const toastEl = document.getElementById('toast');
+let toastTimer;
+function toast(text) { toastEl.textContent = text; toastEl.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => toastEl.classList.remove('show'), 6000); }
+
+/** Стереть проекты и справочник с устройства (выход с удалением, чужой аккаунт). */
+function wipe() {
+  for (const id of Object.keys(db)) { delThumb(id); delete db[id]; }
+  for (const k of [PROJECTS_KEY, CURRENT_KEY, LEGACY_KEY, NAME_KEY, CATALOG_KEY, CATALOG_KEY + '-backup', 'mebel-preview']) try { localStorage.removeItem(k); } catch { /* ничего */ }
+  cat = loadCatalog();
+  usePlaceholder(); openProject(cur, true); showProjects();
+}
+
+function onSyncEvent(e) {
+  if (e.type === 'status') account && account.onStatus(e.status);
+  else if (e.type === 'unauthorized') account && account.expired();
+  else if (e.type === 'catalog') { cat = loadCatalog(); drawGlobal(); }
+  else if (e.type === 'rejected') toast('Сервер не принял проект' + (e.message ? ': ' + e.message : ''));
+  else if (e.type === 'error') console.warn('Синхронизация:', e.error);
+  else if (e.type === 'conflicts') {
+    const c = e.conflicts[0], more = e.conflicts.length > 1 ? ` (и ещё ${e.conflicts.length - 1})` : '';
+    toast(c.restored ? `«${c.name}» удалён на другом устройстве; ваша версия сохранена как новый проект${more}` : `«${c.name}» изменён на другом устройстве. Ваши правки сохранены в копии «${c.copy}»${more}`);
+  } else if (e.type === 'projects') {
+    if (placeholder) { // чистое устройство: с сервера пришли проекты — заготовка больше не нужна
+      const ids = Object.keys(db).filter(id => id !== cur);
+      if (ids.length) { delete db[cur]; placeholder = false; if (projDlg.open) projDlg.close(); openProject(ids[0], true); }
+    } else if (!db[cur]) { // текущий проект удалён на другом устройстве
+      const ids = Object.keys(db), next = [...e.added].pop() || ids[0];
+      if (next) openProject(next, true); else { usePlaceholder(); openProject(cur, true); showProjects(); }
+    } else if (e.replaced.has(cur)) { openProject(cur, true); toast('Проект обновлён с другого устройства'); }
+    drawHeader(); if (projDlg.open) drawProjDlg();
+  }
+}
+
+const api = createApi();
+sync = createSync({
+  api, storage: localStorage, getDb: () => db, onEvent: onSyncEvent, wipe,
+  persist: () => { if (!placeholder) saveProjects(db, cur); },
+  skip: id => placeholder && id === cur,
+  thumbs: { get: getLocalThumb, drop: delThumb },
+});
+hooks.onSave = () => sync.touch();
+catalogHooks.onSave = () => sync.touch();
+setRemote(async id => { if (!sync.user) return undefined; const r = await api.get(`/projects/${encodeURIComponent(id)}/thumb`); return r.offline ? undefined : r.ok ? r.data : null; });
+account = initAccount({
+  el, dlg, api, sync, toast, toggleMenu,
+  localCount: () => Object.keys(db).filter(id => !(placeholder && id === cur)).length,
+  dirtyCount: () => Object.keys(db).filter(id => sync.isDirty(id)).length,
+  flush: () => { saveThumbNow(); save(); },
+  addProject: (name, Pn) => addProject(name, normalize(Pn)),
+  refreshCards: () => { if (projDlg.open) drawProjDlg(); },
+});
+account.boot();

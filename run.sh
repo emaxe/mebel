@@ -126,7 +126,7 @@ do_build() {
 # Полный стек для разработки: postgres + mailpit + api + шлюз (deploy/docker-compose.dev.yml)
 do_dev() {
   command -v docker >/dev/null 2>&1 || { err "Нужен Docker"; return 1; }
-  say "Сервис: http://localhost:8080/  ·  почта (Mailpit): http://localhost:8025/"
+  say "Сервис: http://localhost:8088/  ·  почта (Mailpit): http://localhost:8025/"
   exec docker compose -f "$ROOT/deploy/docker-compose.dev.yml" up --build
 }
 

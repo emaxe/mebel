@@ -68,13 +68,21 @@ import { loadCatalog, sheetFor, isTextured } from './catalog.js';
 import { estimate } from './estimate.js';
 import { frontView, sideView } from './drawings.js';
 const doc = document.getElementById('doc');
-const P = JSON.parse(localStorage.getItem('mebel-v3') || 'null');
-if (!P) { doc.innerHTML = '<div class="sheet">Нет данных. Откройте <a href="index.html">конструктор</a> и настройте изделие.</div>'; throw 0; }
-const cat = loadCatalog();
+// ?share=токен — проект по ссылке для просмотра (с сервера, без входа); иначе текущий проект из localStorage
+const shareToken = new URLSearchParams(location.search).get('share');
+let P, cat, projName, preview = null;
+if (shareToken) {
+  const r = await fetch('api/share/' + encodeURIComponent(shareToken)).then(x => (x.ok ? x.json() : null)).catch(() => null);
+  if (!r) { doc.innerHTML = '<div class="sheet">Ссылка недействительна или отозвана.</div>'; throw 0; }
+  P = r.P; projName = r.name; cat = loadCatalog({ getItem: () => (r.catalog ? JSON.stringify(r.catalog) : null) });
+} else {
+  P = JSON.parse(localStorage.getItem('mebel-v3') || 'null');
+  if (!P) { doc.innerHTML = '<div class="sheet">Нет данных. Откройте <a href="index.html">конструктор</a> и настройте изделие.</div>'; throw 0; }
+  cat = loadCatalog(); projName = localStorage.getItem('mebel-v3-name') || 'Проект'; preview = localStorage.getItem('mebel-preview');
+}
 const spec = buildSpec(P), G = groupParts(spec), E = edgeSummary(G);
 const N = nest(G, { sheetFor: (l, T) => sheetFor(cat, l, T), textured: l => isTextured(cat, l), kerf: cat.cut.kerf, trim: cat.cut.trim, minOffcut: cat.cut.minOffcut });
 const EST = estimate(spec, G, N, E, cat);
-const projName = localStorage.getItem('mebel-v3-name') || 'Проект';
 const cur = cat.currency || '₽', rub = v => v.toLocaleString('ru-RU', { maximumFractionDigits: 0 }) + ' ' + cur;
 const W = Math.round(spec.meta.W), TYPES = { wardrobe: 'Шкаф', rack: 'Стеллаж', nightstand: 'Тумба прикроватная', dresser: 'Комод', tv: 'ТВ-тумба' };
 const title = `${TYPES[P.type] || 'Изделие'} ${W}×${P.height}×${P.depth} мм`;
@@ -109,7 +117,6 @@ html += `<section class="sheet est m-task"><h2>Смета</h2>${EST.sections.map
 ${EST.missing.length ? `<p class="nop">Нет цены в справочнике: ${esc(EST.missing.join('; '))}. Заполните цены кнопкой «Справочник и цены» в конструкторе — позиции без цены не входят в итог.</p>` : ''}</section>`;
 
 // коммерческое предложение
-const preview = localStorage.getItem('mebel-preview');
 html += `<section class="sheet kp m-kp"><h1>Коммерческое предложение</h1><div class="muted">${esc(projName)} · ${new Date().toLocaleDateString('ru-RU')}</div>
 ${preview ? `<p><img alt="Вид изделия" src="${preview}"></p>` : ''}
 <div class="meta"><div><span>Изделие</span>${esc(title)}</div><div><span>Корпус</span>ЛДСП ${esc(P.bodyName)}, ${P.thickness} мм</div><div><span>Фасады</span>${esc(P.frontName)}</div><div><span>Задняя стенка</span>${{ groove: 'ХДФ 4 мм в паз', overlay: 'ХДФ 4 мм накладная', none: 'нет' }[P.backType]}</div></div>

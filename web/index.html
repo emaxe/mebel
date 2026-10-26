@@ -37,6 +37,16 @@
   .top .dims{margin:0;white-space:nowrap}
   .saved{font-size:12px;color:#8a8478;white-space:nowrap;transition:color .3s}
   .saved.ok{color:#2f6b3a}.saved.err{color:#c0392b}
+  .syncst{font-size:12px;color:#2f6b3a;white-space:nowrap}.syncst.off{color:#8a8478}.syncst.err{color:#c0392b}
+  #bacct{max-width:170px;overflow:hidden;text-overflow:ellipsis}
+  .mhead{padding:8px 14px;font-size:12px;color:#8a8478;max-width:260px;overflow:hidden;text-overflow:ellipsis}
+  .fld{display:block;margin:10px 0}.fld>span{display:block;font-size:12px;color:#6a655b;margin-bottom:4px}
+  .ferr{color:#c0392b;font-size:13px;min-height:1em;margin:6px 0}.hint.ok{color:#2f6b3a}
+  .lnk{color:#4a463f;text-decoration:underline;cursor:pointer}
+  .vlist{display:flex;flex-direction:column;gap:6px;margin-top:8px;max-height:50vh;overflow-y:auto}
+  .vrow{display:flex;align-items:center;gap:8px;font-size:13px}.vwhen{color:#8a8478;white-space:nowrap}.vname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);background:#22211e;color:#faf9f6;padding:10px 16px;border-radius:8px;font-size:13px;max-width:min(520px,calc(100vw - 24px));opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:100}
+  #toast.show{opacity:1;transform:translateX(-50%)}
   .top .menu{left:0;right:auto}.top .xwrap .menu{left:auto;right:0}
   .menu .sep{height:1px;background:#e8e4dc;margin:4px 0}
   .mob-only{display:none}
@@ -170,7 +180,7 @@
   @media (max-width:760px){
     .app{display:block;height:100dvh}
     .top{position:fixed;left:0;right:0;top:0;height:48px;gap:4px;padding:0 8px}
-    .top .badge,.top .dims,.top .saved,.top [data-x=prod],.top [data-x=cat]{display:none}
+    .top .badge,.top .dims,.top .saved,.top .syncst,.top [data-x=prod],.top [data-x=cat]{display:none}
     .mob-only{display:block!important}
     .pname{max-width:none;font-size:14px}
     .top .mwrap:first-of-type{flex:1}
@@ -205,11 +215,13 @@
   <header class="top">
     <button class="tbtn" id="bproj" title="Все проекты">☰ Проекты</button>
     <div class="mwrap"><button class="pname" id="pname" title="Переименовать проект"></button><button class="tbtn" id="pmenu" title="Действия с проектом" aria-label="Меню проекта">⋯</button>
-      <div class="menu" id="pm" hidden><button data-pm="rename">Переименовать…</button><button data-pm="saveas">Дублировать…</button><button data-pm="reset">Сбросить к шаблону</button><div class="sep"></div><button data-pm="export">Экспорт в файл .json</button><div class="sep"></div><button data-pm="del">Удалить…</button></div></div>
+      <div class="menu" id="pm" hidden><button data-pm="rename">Переименовать…</button><button data-pm="saveas">Дублировать…</button><button data-pm="reset">Сбросить к шаблону</button><div class="sep"></div><button data-pm="share">Ссылка для просмотра…</button><button data-pm="versions">История версий…</button><div class="sep"></div><button data-pm="export">Экспорт в файл .json</button><div class="sep"></div><button data-pm="del">Удалить…</button></div></div>
     <span class="badge" id="tbadge"></span><span class="dims" id="dims"></span>
     <div class="sp"></div>
     <button class="tbtn" id="undo" disabled title="Отменить последнее изменение (Ctrl/⌘+Z)">↶</button><button class="tbtn" id="redo" disabled title="Вернуть отменённое (Ctrl/⌘+Shift+Z)">↷</button>
     <span class="saved" id="saved" role="status"></span>
+    <span class="syncst" id="syncst" role="status" hidden></span>
+    <div class="mwrap xwrap"><button class="tbtn" id="bacct" hidden>Войти</button><div class="menu" id="am" hidden></div></div>
     <button class="tbtn pri" data-x="prod" title="Общий вид, смета, спецификация, раскрой и присадка — для печати или PDF">Задание на распил</button>
     <div class="mwrap xwrap"><button class="tbtn" id="xmenu">Экспорт ▾</button>
       <div class="menu" id="xm" hidden>
@@ -246,6 +258,7 @@
   </div>
 </div>
 <dialog id="dlg"></dialog>
+<div id="toast" role="status"></div>
 <dialog id="projDlg" class="projects"></dialog>
 <script src="three-d-stage.js"></script>
 <script type="module" src="app.js"></script>

@@ -1,10 +1,10 @@
-# Разработка: http://localhost:8080 (клиент + /api), письма — http://localhost:8025 (Mailpit).
+# Разработка: http://localhost:8088 (клиент + /api), письма — http://localhost:8025 (Mailpit).
 # Запуск: ./run.sh dev
 name: mebel-dev
 services:
   caddy:
     image: caddy:2-alpine
-    ports: ["8080:80"]
+    ports: ["8088:80"]
     environment:
       SITE_ADDRESS: ":80"
     volumes:
@@ -16,7 +16,7 @@ services:
     build: { context: .., dockerfile: server/Dockerfile }
     environment:
       DATABASE_URL: postgres://mebel:mebel@postgres:5432/mebel
-      APP_URL: http://localhost:8080
+      APP_URL: http://localhost:8088
       SMTP_URL: smtp://mailpit:1025
     depends_on:
       postgres: { condition: service_healthy }

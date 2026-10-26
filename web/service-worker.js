@@ -1,9 +1,9 @@
 // Cache-first для статики. При изменении файлов увеличьте VERSION.
-const VERSION = 'mebel-v6';
+const VERSION = 'mebel-v7';
 const ASSETS = [
-  './', 'index.html', 'production.html', 'pwa.js', 'manifest.webmanifest',
+  './', 'index.html', 'production.html', 'view.html', 'view.js', 'pwa.js', 'manifest.webmanifest',
   'app.js', 'model.js', 'model-fronts.js', 'build3d.js', 'export.js', 'kinematics.js', 'rules.js', 'autofix.js', 'three-d-stage.js',
-  'catalog.js', 'projects.js', 'thumbs.js', 'estimate.js', 'drawings.js', 'vendor/qrcode/qrcode.js', 'vendor/qrcode/qrcode_UTF8.js',
+  'catalog.js', 'projects.js', 'thumbs.js', 'api.js', 'sync.js', 'account.js', 'estimate.js', 'drawings.js', 'vendor/qrcode/qrcode.js', 'vendor/qrcode/qrcode_UTF8.js',
   'vendor/three/build/three.module.js', 'vendor/three/build/three.core.js',
   'vendor/three/examples/jsm/controls/OrbitControls.js',
   'vendor/three/examples/jsm/exporters/OBJExporter.js',
@@ -24,7 +24,9 @@ self.addEventListener('activate', e => {
 
 self.addEventListener('fetch', e => {
   const req = e.request;
-  if (req.method !== 'GET' || new URL(req.url).origin !== location.origin) return;
+  const url = new URL(req.url);
+  // API — только сеть: ответы сервера зависят от входа и не должны оседать в кэше
+  if (req.method !== 'GET' || url.origin !== location.origin || url.pathname.includes('/api/')) return;
   e.respondWith(
     caches.match(req, { ignoreSearch: true }).then(hit => hit || fetch(req).then(res => {
       if (res.ok) { const copy = res.clone(); caches.open(VERSION).then(c => c.put(req, copy)); }

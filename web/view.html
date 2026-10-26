@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Просмотр проекта — Конструктор мебели</title>
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three/build/three.module.js",
+    "three/addons/controls/OrbitControls.js": "./vendor/three/examples/jsm/controls/OrbitControls.js",
+    "three/addons/exporters/OBJExporter.js": "./vendor/three/examples/jsm/exporters/OBJExporter.js",
+    "three/addons/exporters/GLTFExporter.js": "./vendor/three/examples/jsm/exporters/GLTFExporter.js"
+  }
+}
+</script>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#f0eee6;font:13px/1.4 "Helvetica Neue",Helvetica,Arial,sans-serif;color:#22211e}
+  .app{display:grid;grid-template-rows:auto minmax(0,1fr);height:100dvh}
+  header{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px;padding:8px 14px;background:#faf9f6;border-bottom:1px solid #e2ded5}
+  h1{margin:0;font-size:16px;font-weight:600}
+  .dims{color:#8a8478;white-space:nowrap}
+  .sp{flex:1}
+  .btn{border:1px solid #d9d4ca;background:#fff;border-radius:6px;padding:0 12px;height:32px;line-height:30px;font-size:13px;color:#22211e;text-decoration:none;white-space:nowrap}
+  .btn:hover{background:#f3f1ec}.btn.pri{background:#22211e;border-color:#22211e;color:#faf9f6}
+  .stagebox{position:relative;min-height:0}
+  three-d-stage{height:100%}
+  three-d-stage:not(:defined){visibility:hidden}
+  .msg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px;color:#6a655b;font-size:15px}
+  .msg[hidden]{display:none}
+  .badge{font-size:11px;color:#8a8478}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1 id="name">Проект</h1><span class="dims" id="dims"></span>
+    <span class="sp"></span>
+    <span class="badge">Только просмотр</span>
+    <a class="btn pri" id="prod" href="#">Задание на распил</a>
+    <a class="btn" id="kp" href="#">КП</a>
+    <a class="btn" href="index.html">Конструктор</a>
+  </header>
+  <div class="stagebox">
+    <three-d-stage name="mebel" no-ui></three-d-stage>
+    <div class="msg" id="msg" hidden></div>
+  </div>
+</div>
+<script src="three-d-stage.js"></script>
+<script type="module" src="view.js"></script>
+</body>
+</html>
