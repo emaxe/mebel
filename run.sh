@@ -28,9 +28,9 @@ port_busy() { lsof -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1; }
 # Команда статического сервера: python3 или npx serve
 server_cmd() {
   if command -v python3 >/dev/null 2>&1; then
-    SERVER="python3 -m http.server $PORT"
+    SERVER="python3 -m http.server $PORT --directory web"
   elif command -v npx >/dev/null 2>&1; then
-    SERVER="npx --yes serve -l $PORT ."
+    SERVER="npx --yes serve -l $PORT web"
   else
     err "Нужен python3 или npx (Node.js)"; return 1
   fi
@@ -86,7 +86,7 @@ do_stop() {
 do_check() {
   command -v node >/dev/null 2>&1 || { err "Нужен Node.js"; return 1; }
   fail=0
-  for f in *.js; do
+  for f in web/*.js; do
     if node --check "$f" 2>/tmp/mebel_check.err; then
       printf '  %-22s ok\n' "$f"
     else
@@ -99,11 +99,11 @@ do_check() {
 
 # Новая версия кеша service worker — клиенты получат свежие файлы
 do_bump() {
-  cur=$(sed -n "s/^const VERSION = 'mebel-v\([0-9]*\)'.*/\1/p" service-worker.js)
+  cur=$(sed -n "s/^const VERSION = 'mebel-v\([0-9]*\)'.*/\1/p" web/service-worker.js)
   [ -z "$cur" ] && { err "VERSION не найден в service-worker.js"; return 1; }
   new=$((cur + 1))
-  sed "s/^const VERSION = 'mebel-v$cur'/const VERSION = 'mebel-v$new'/" service-worker.js >service-worker.js.tmp \
-    && mv service-worker.js.tmp service-worker.js
+  sed "s/^const VERSION = 'mebel-v$cur'/const VERSION = 'mebel-v$new'/" web/service-worker.js >web/service-worker.js.tmp \
+    && mv web/service-worker.js.tmp web/service-worker.js
   ok "Версия кеша: mebel-v$cur → mebel-v$new"
 }
 
@@ -112,8 +112,8 @@ do_build() {
   do_check || return 1
   out="$ROOT/dist"
   rm -rf "$out"; mkdir -p "$out"
-  cp index.html production.html manifest.webmanifest service-worker.js pwa.js ./*.js "$out"/ 2>/dev/null
-  cp -R icons vendor "$out"/
+  cp web/*.html web/manifest.webmanifest web/*.js "$out"/ 2>/dev/null
+  cp -R web/icons web/vendor "$out"/
   ok "Пакет собран: $out"
   if command -v zip >/dev/null 2>&1; then
     stamp=$(date +%Y%m%d-%H%M)
@@ -121,6 +121,13 @@ do_build() {
   else
     warn "zip не найден — архив не создан"
   fi
+}
+
+# Полный стек для разработки: postgres + mailpit + api + шлюз (deploy/docker-compose.dev.yml)
+do_dev() {
+  command -v docker >/dev/null 2>&1 || { err "Нужен Docker"; return 1; }
+  say "Сервис: http://localhost:8080/  ·  почта (Mailpit): http://localhost:8025/"
+  exec docker compose -f "$ROOT/deploy/docker-compose.dev.yml" up --build
 }
 
 status_line() {
@@ -163,6 +170,7 @@ case ${1:-menu} in
   check) do_check ;;
   bump)  do_bump ;;
   build) do_build ;;
+  dev)   do_dev ;;
   menu)  menu ;;
-  *) printf 'Использование: %s [serve|bg|stop|check|bump|build|menu]\n' "$0"; exit 2 ;;
+  *) printf 'Использование: %s [serve|bg|stop|check|bump|build|dev|menu]\n' "$0"; exit 2 ;;
 esac
