@@ -7,6 +7,9 @@ export const NAME_KEY = 'mebel-v3-name';
 const read = (st, k) => { try { return JSON.parse(st.getItem(k) || 'null'); } catch { return null; } };
 const write = (st, k, v) => { try { st.setItem(k, typeof v === 'string' ? v : JSON.stringify(v)); return true; } catch { return false; } };
 
+/** Подписка на запись списка (синхронизация с сервером): hooks.onSave = () => … */
+export const hooks = { onSave: null };
+
 export const newId = () => 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
 /** Список проектов {id: {name, updated, P}}; первый запуск переносит единственный старый проект. */
@@ -26,6 +29,7 @@ export function loadProjects(st = globalThis.localStorage, fallbackP = null) {
 export function saveProjects(db, cur, st = globalThis.localStorage) {
   let ok = write(st, PROJECTS_KEY, db);
   if (cur) { write(st, CURRENT_KEY, cur); write(st, LEGACY_KEY, db[cur].P); write(st, NAME_KEY, db[cur].name); }
+  if (hooks.onSave) try { hooks.onSave(); } catch { /* подписчик не должен ломать сохранение */ }
   return ok;
 }
 

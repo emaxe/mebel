@@ -1,5 +1,7 @@
 // Справочники: декоры, листы, кромка, фурнитура, работы, параметры раскроя. Без DOM: работает и в node.
 export const CATALOG_KEY = 'mebel-catalog';
+/** Подписка на запись справочника (синхронизация с сервером): catalogHooks.onSave = () => … */
+export const catalogHooks = { onSave: null };
 
 export const DEFAULT_CATALOG = {
   decors: [
@@ -60,6 +62,7 @@ export function loadCatalog(storage = globalThis.localStorage) {
 }
 export function saveCatalog(c, storage = globalThis.localStorage) {
   try { storage.setItem(CATALOG_KEY, JSON.stringify(c)); } catch { /* нет хранилища */ }
+  if (catalogHooks.onSave) try { catalogHooks.onSave(); } catch { /* подписчик не должен ломать сохранение */ }
 }
 
 const matKind = label => (/^ХДФ/.test(label) || /^МДФ/.test(label) ? label.slice(0, 3) : 'ЛДСП');

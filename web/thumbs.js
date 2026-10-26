@@ -19,5 +19,18 @@ const tx = async (mode, fn) => {
 };
 
 export const putThumb = (id, blob) => tx('readwrite', s => s.put(blob, id)).catch(() => {});
-export const getThumb = id => tx('readonly', s => s.get(id)).then(v => v || null).catch(() => null);
-export const delThumb = id => tx('readwrite', s => s.delete(id)).catch(() => {});
+const getLocal = id => tx('readonly', s => s.get(id)).then(v => v || null).catch(() => null);
+
+// Миниатюры проектов с других устройств лежат на сервере: remote(id) → Blob|null. Скачанное кладём в локальный кэш.
+let remote = null;
+const tried = new Set(); // id, которых на сервере нет, повторно не спрашиваем до перезагрузки
+export const setRemote = fn => { remote = fn; tried.clear(); };
+export const getThumb = async id => {
+  const local = await getLocal(id);
+  if (local || !remote || tried.has(id)) return local;
+  tried.add(id);
+  const blob = await Promise.resolve(remote(id)).catch(() => null);
+  if (blob) putThumb(id, blob);
+  return blob || null;
+};
+export const delThumb = id => { tried.delete(id); return tx('readwrite', s => s.delete(id)).catch(() => {}); };
