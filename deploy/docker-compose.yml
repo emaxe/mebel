@@ -1,0 +1,54 @@
+# Прод: caddy (TLS + статика + /api) → api → postgres, плюс ежесуточные дампы.
+# Запуск: cd deploy && cp .env.example .env && docker compose up -d --build
+name: mebel
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports: ["80:80", "443:443", "443:443/udp"]
+    environment:
+      SITE_ADDRESS: ${DOMAIN:?DOMAIN не задан}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ../web:/srv/web:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [api]
+
+  api:
+    build: { context: .., dockerfile: server/Dockerfile }
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://mebel:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD не задан}@postgres:5432/mebel
+      APP_URL: ${APP_URL:?APP_URL не задан}
+      SMTP_URL: ${SMTP_URL:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: mebel
+      POSTGRES_DB: mebel
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mebel -d mebel"]
+      interval: 5s
+      retries: 10
+
+  backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ./backup.sh:/backup.sh:ro
+      - backups:/backups
+    command: ["sh", "/backup.sh"]
+    depends_on:
+      postgres: { condition: service_healthy }
+
+volumes: { pgdata: {}, caddy_data: {}, caddy_config: {}, backups: {} }

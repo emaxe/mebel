@@ -1,0 +1,24 @@
+# Шлюз: TLS, раздача клиента, /api → сервер. SITE_ADDRESS: домен (автоматический HTTPS) или :80 для разработки.
+{$SITE_ADDRESS:localhost} {
+	encode zstd gzip
+
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		X-Frame-Options DENY
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' blob:; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+		-Server
+	}
+
+	handle /api/* {
+		reverse_proxy api:3000
+	}
+
+	handle {
+		root * /srv/web
+		# оболочка и service worker всегда проверяются заново, остальное версионируется кэшем SW
+		@shell path / /index.html /production.html /view.html /service-worker.js /manifest.webmanifest
+		header @shell Cache-Control "no-cache"
+		file_server
+	}
+}
