@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Задание на распил и присадку</title>
+<style>
+  body{margin:0;background:#ecebe6;font:13px/1.45 "Helvetica Neue",Helvetica,Arial,sans-serif;color:#1f1e1b}
+  a{color:#1f1e1b} a:hover{color:#6b5a45}
+  .doc{max-width:1060px;margin:0 auto;padding:32px 28px 80px}
+  .sheet{background:#fff;border:1px solid #dcd8cf;border-radius:6px;padding:26px 28px;margin-bottom:18px}
+  h1{font-size:22px;margin:0 0 4px;font-weight:600}
+  h2{font-size:15px;margin:0 0 14px;font-weight:600}
+  .meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px 24px;margin-top:16px}
+  .meta div span{display:block;font-size:11px;color:#8a8478;text-transform:uppercase;letter-spacing:.06em}
+  .bar{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px}
+  .bar button,.bar a{border:1px solid #cfcac0;background:#fff;border-radius:6px;padding:8px 14px;font:inherit;cursor:pointer;text-decoration:none}
+  .bar button.pri{background:#1f1e1b;color:#fff;border-color:#1f1e1b}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th{font-weight:600;text-align:left;border-bottom:1.5px solid #1f1e1b;padding:6px 6px;white-space:nowrap}
+  td{border-bottom:1px solid #e6e2da;padding:5px 6px;vertical-align:top}
+  td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;font-family:ui-monospace,Menlo,monospace;font-size:11.5px}
+  .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:24px}
+  .warn{background:#fff4e5;border:1px solid #f0c48a;border-radius:6px;padding:10px 14px;margin-bottom:18px}
+  .part{border-top:1px solid #e6e2da;padding:18px 0 8px;break-inside:avoid}
+  .part:first-of-type{border-top:0;padding-top:0}
+  .ph{display:flex;flex-wrap:wrap;gap:4px 18px;align-items:baseline;margin-bottom:8px}
+  .ph b{font-size:14px}
+  .ph span{color:#6f6a60}
+  .legend{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:12px;color:#4a463f}
+  .legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:-1px}
+  .muted{color:#8a8478}
+  svg text{font-family:"Helvetica Neue",Helvetica,Arial,sans-serif}
+  .bar button.on{background:#6b5a45;color:#fff;border-color:#6b5a45}
+  body[data-mode=task] .m-kp,body[data-mode=task] .m-labels,body[data-mode=kp] .m-task,body[data-mode=kp] .m-labels,body[data-mode=labels] .m-task,body[data-mode=labels] .m-kp{display:none}
+  .views{display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:18px}
+  .views svg{border:1px solid #e6e2da;border-radius:4px}
+  .tot td{font-weight:600;border-top:1.5px solid #1f1e1b}
+  .est h3{font-size:12px;margin:14px 0 4px;color:#4a463f}
+  .nop{color:#c0392b}
+  .kp{max-width:760px;margin:0 auto}
+  .kp img{width:100%;border-radius:6px;border:1px solid #e6e2da;background:#faf9f6}
+  .kp .price{font-size:30px;font-weight:600;margin:14px 0 4px}
+  .kp .terms{border:1px dashed #cfcac0;border-radius:6px;padding:10px 12px;min-height:60px;white-space:pre-wrap}
+  .labels{display:grid;grid-template-columns:repeat(3,70mm);grid-auto-rows:37.125mm;width:210mm;margin:0 auto;background:#fff;box-shadow:0 0 0 1px #dcd8cf}
+  .lab{box-sizing:border-box;padding:2.2mm 2.6mm;display:grid;grid-template-columns:1fr 23mm;grid-template-rows:auto 1fr auto;gap:0 2mm;border:.2mm dashed #cfcac0;overflow:hidden;font-size:8.2pt;line-height:1.25}
+  .lab b{font-size:9.4pt}
+  .lab .qr{grid-row:1/3;grid-column:2;align-self:start}
+  .lab .qr svg{width:22mm;height:22mm;display:block}
+  .lab .edge{grid-column:2;grid-row:3;justify-self:end}
+  .lab .sz{font-family:ui-monospace,Menlo,monospace;font-size:8pt}
+  .lab .mt{color:#555;font-size:7pt}
+  @page{margin:0}
+  @media print{body{background:#fff}.doc{padding:12mm;max-width:none}.sheet{border:0;padding:0 0 10mm;break-after:page}.bar{display:none}
+    body[data-mode=labels] .doc{padding:0}body[data-mode=labels] .sheet{padding:0;break-after:auto}body[data-mode=labels] h2,body[data-mode=labels] .sheet>p{display:none}.labels{box-shadow:none;margin:0}.lab{border:.2mm dashed #ddd}}
+</style>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#6b5a45">
+</head>
+<body>
+<div class="doc" id="doc"></div>
+<script src="vendor/qrcode/qrcode.js"></script>
+<script src="vendor/qrcode/qrcode_UTF8.js"></script>
+<script type="module">
+import { buildSpec } from './model.js';
+import { groupParts, nest, edgeSummary, toCSV, toDXF } from './export.js';
+import { loadCatalog, sheetFor, isTextured } from './catalog.js';
+import { estimate } from './estimate.js';
+import { frontView, sideView } from './drawings.js';
+const doc = document.getElementById('doc');
+const P = JSON.parse(localStorage.getItem('mebel-v3') || 'null');
+if (!P) { doc.innerHTML = '<div class="sheet">Нет данных. Откройте <a href="index.html">конструктор</a> и настройте изделие.</div>'; throw 0; }
+const cat = loadCatalog();
+const spec = buildSpec(P), G = groupParts(spec), E = edgeSummary(G);
+const N = nest(G, { sheetFor: (l, T) => sheetFor(cat, l, T), textured: l => isTextured(cat, l), kerf: cat.cut.kerf, trim: cat.cut.trim, minOffcut: cat.cut.minOffcut });
+const EST = estimate(spec, G, N, E, cat);
+const projName = localStorage.getItem('mebel-v3-name') || 'Проект';
+const cur = cat.currency || '₽', rub = v => v.toLocaleString('ru-RU', { maximumFractionDigits: 0 }) + ' ' + cur;
+const W = Math.round(spec.meta.W), TYPES = { wardrobe: 'Шкаф', rack: 'Стеллаж', nightstand: 'Тумба прикроватная', dresser: 'Комод', tv: 'ТВ-тумба' };
+const title = `${TYPES[P.type] || 'Изделие'} ${W}×${P.height}×${P.depth} мм`;
+const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+const fmt = v => String(v).replace('.', ',');
+const download = (data, name, type) => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([data], { type })); a.download = name; a.click(); };
+const stamp = `${P.type}_${W}x${P.height}x${P.depth}`;
+
+// materials summary
+const mats = new Map();
+for (const g of G) { const k = `${g.label}|${g.T}`; const m = mats.get(k) || { label: g.label, T: g.T, area: 0, n: 0 }; m.area += g.L * g.W * g.qty / 1e6; m.n += g.qty; mats.set(k, m); }
+const sheetsBy = {}; N.sheets.forEach(s => { sheetsBy[s.mat] = s.of; });
+
+let html = `<div class="bar"><button data-m="task">Задание</button><button data-m="kp">КП для клиента</button><button data-m="labels">Этикетки</button><button class="pri" id="pr">Печать / PDF</button><button id="csv">CSV / Excel</button><button id="dxf">DXF</button><a href="index.html">← В конструктор</a></div>`;
+if (spec.warnings.length) html += `<div class="warn m-task"><b>Проверьте конструкцию:</b><br>${spec.warnings.map(esc).join('<br>')}</div>`;
+html += `<section class="sheet m-task"><h1>Задание на распил и присадку</h1><div class="muted">${esc(title)} · ${new Date().toLocaleDateString('ru-RU')}</div>
+<div class="meta">
+<div><span>Габариты</span>${W} × ${P.height} × ${P.depth} мм</div>
+<div><span>Корпус</span>ЛДСП ${esc(P.bodyName)}, ${P.thickness} мм</div>
+<div><span>Фасады</span>${esc(P.frontName)}, ${P.frontT} мм</div>
+<div><span>Кромка</span>лицевая ${fmt(P.edgeFront)} мм, скрытая ${P.edgeHidden ? fmt(P.edgeHidden) + ' мм' : 'нет'}</div>
+<div><span>Задняя стенка</span>${{ groove: 'ХДФ 4 мм в паз', overlay: 'ХДФ 4 мм накладная', none: 'нет' }[P.backType]}</div>
+<div><span>Деталей</span>${G.reduce((a, g) => a + g.qty, 0)} шт., ${G.length} позиций</div>
+</div></section>`;
+
+html += `<section class="sheet m-task"><h2>Общий вид</h2><div class="views">${frontView(spec, P)}${frontView(spec, P, { fronts: true })}${sideView(spec, P)}</div></section>`;
+
+// смета
+const nz = v => String(v).replace('.', ',');
+html += `<section class="sheet est m-task"><h2>Смета</h2>${EST.sections.map(s => `<h3>${s.title}</h3><table><tr><th>Позиция</th><th class="n">Кол-во</th><th>Ед.</th><th class="n">Цена</th><th class="n">Сумма</th></tr>${s.lines.map(l => `<tr><td>${esc(l.name)}</td><td class="n">${nz(l.qty)}</td><td>${l.unit}</td><td class="n${l.price == null ? ' nop' : ''}">${l.price == null ? 'нет цены' : nz(l.price)}</td><td class="n">${nz(l.sum)}</td></tr>`).join('')}<tr class="tot"><td colspan="4">${s.title}: итого</td><td class="n">${rub(s.sum)}</td></tr></table>`).join('')}
+<table style="margin-top:14px"><tr><td>Себестоимость</td><td class="n">${rub(EST.subtotal)}</td></tr><tr><td>Наценка ${EST.markupPct}%</td><td class="n">${rub(EST.markup)}</td></tr><tr class="tot"><td>Итого</td><td class="n">${rub(EST.total)}</td></tr></table>
+${EST.missing.length ? `<p class="nop">Нет цены в справочнике: ${esc(EST.missing.join('; '))}. Заполните цены кнопкой «Справочник и цены» в конструкторе — позиции без цены не входят в итог.</p>` : ''}</section>`;
+
+// коммерческое предложение
+const preview = localStorage.getItem('mebel-preview');
+html += `<section class="sheet kp m-kp"><h1>Коммерческое предложение</h1><div class="muted">${esc(projName)} · ${new Date().toLocaleDateString('ru-RU')}</div>
+${preview ? `<p><img alt="Вид изделия" src="${preview}"></p>` : ''}
+<div class="meta"><div><span>Изделие</span>${esc(title)}</div><div><span>Корпус</span>ЛДСП ${esc(P.bodyName)}, ${P.thickness} мм</div><div><span>Фасады</span>${esc(P.frontName)}</div><div><span>Задняя стенка</span>${{ groove: 'ХДФ 4 мм в паз', overlay: 'ХДФ 4 мм накладная', none: 'нет' }[P.backType]}</div></div>
+<div class="price">${rub(EST.total)}</div><div class="muted">Стоимость включает материалы, фурнитуру, раскрой, кромление, присадку и сборку.${EST.missing.length ? ' <span class="nop">Не все позиции оценены: проверьте цены в справочнике.</span>' : ''}</div>
+<h2 style="margin-top:20px">Условия</h2><div class="terms" contenteditable="true">Срок изготовления: 14 рабочих дней.\nОплата: 50% предоплата, остаток при получении.\nПредложение действительно 14 дней.</div></section>`;
+
+// этикетки: по одной на каждую деталь, 24 на лист А4, QR с реквизитами детали
+const qrSvg = text => {
+  try {
+    const q = window.qrcode(0, 'M'); q.addData(text); q.make();
+    const n = q.getModuleCount(); let d = '';
+    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (q.isDark(r, c)) d += `M${c + 2} ${r + 2}h1v1h-1z`;
+    return `<svg viewBox="0 0 ${n + 4} ${n + 4}" shape-rendering="crispEdges"><path d="${d}"/></svg>`;
+  } catch { return ''; }
+};
+const edgeIcon = g => { const e = g.edges, c = v => (v >= 1 ? '#000' : v > 0 ? '#888' : 'none'), w = v => (v >= 1 ? 1.6 : 1);
+  return `<svg width="15mm" height="9mm" viewBox="0 0 30 18"><rect x="3" y="3" width="24" height="12" fill="none" stroke="#bbb" stroke-width=".6"/>
+  <line x1="3" y1="15" x2="27" y2="15" stroke="${c(e.d1)}" stroke-width="${w(e.d1)}"/><line x1="3" y1="3" x2="27" y2="3" stroke="${c(e.d2)}" stroke-width="${w(e.d2)}"/>
+  <line x1="3" y1="3" x2="3" y2="15" stroke="${c(e.w1)}" stroke-width="${w(e.w1)}"/><line x1="27" y1="3" x2="27" y2="15" stroke="${c(e.w2)}" stroke-width="${w(e.w2)}"/></svg>`; };
+const labels = [];
+for (const g of G) for (let i = 1; i <= g.qty; i++) labels.push(`<div class="lab"><div><b>№${g.no} ${esc(g.name)}</b></div><div><div class="sz">${fmt(g.L)} × ${fmt(g.W)} × ${g.T}</div><div class="sz">пил. ${fmt(g.saw.L)} × ${fmt(g.saw.W)}</div><div class="mt">${esc(g.label)} · сек. ${g.secLabel}${g.qty > 1 ? ` · ${i}/${g.qty}` : ''}</div></div><div class="mt">${esc(projName)}</div><div class="qr">${qrSvg(`${projName}|№${g.no}|${g.name}|${g.L}x${g.W}x${g.T}|сек.${g.secLabel}`)}</div><div class="edge">${edgeIcon(g)}</div></div>`);
+html += `<section class="sheet m-labels"><h2>Этикетки деталей</h2><p class="muted">${labels.length} шт., 70×37 мм, 24 на лист А4 (печать без полей, масштаб 100%). Кромка на схеме: чёрная — 1 мм и толще, серая — 0,4 мм; Д1 — снизу, Д2 — сверху, Ш1 — слева, Ш2 — справа. QR содержит проект, номер, название и размер детали.</p><div class="labels">${labels.join('')}</div></section>`;
+
+html += `<section class="sheet m-task"><h2>Сводка материалов</h2><div class="grid2"><div><table><tr><th>Материал</th><th class="n">мм</th><th class="n">м²</th><th class="n">Листов</th></tr>
+${[...mats.values()].map(m => `<tr><td>${esc(m.label)}</td><td class="n">${m.T}</td><td class="n">${fmt(m.area.toFixed(2))}</td><td class="n">${sheetsBy[`${m.label}, ${m.T} мм`] ?? '—'}</td></tr>`).join('')}
+</table><p class="muted">${[...new Set(N.sheets.map(s => `${s.L}×${s.W}`))].join(', ') || '—'} мм, обрезка ${cat.cut.trim} мм, пропил ${cat.cut.kerf} мм. Раскрой гильотинный.</p>
+<table><tr><th>Кромка ПВХ</th><th class="n">пог. м</th><th class="n">+10%</th></tr>${E.map(e => `<tr><td>${fmt(e.t)} мм</td><td class="n">${fmt(e.m.toFixed(1))}</td><td class="n">${fmt((e.m * 1.1).toFixed(1))}</td></tr>`).join('')}</table></div>
+<div><table><tr><th>Фурнитура</th><th class="n">шт.</th></tr>${spec.hw.map(([k, v]) => `<tr><td>${esc(k)}</td><td class="n">${v}</td></tr>`).join('')}</table></div></div></section>`;
+
+const eTxt = v => (v ? fmt(v) : '—');
+html += `<section class="sheet m-task"><h2>Спецификация деталей</h2><table><tr><th class="n">№</th><th>Деталь</th><th>Материал</th><th class="n">T</th><th class="n">Длина</th><th class="n">Ширина</th><th class="n">Пил. Д×Ш</th><th class="n">Шт</th><th class="n">Д1 Д2 Ш1 Ш2</th><th class="n">Отв.</th><th>Секция / примечание</th></tr>
+${G.map(g => `<tr><td class="n">${g.no}</td><td>${esc(g.name)}</td><td>${esc(g.label)}</td><td class="n">${g.T}</td><td class="n">${fmt(g.L)}</td><td class="n">${fmt(g.W)}</td><td class="n">${fmt(g.saw.L)}×${fmt(g.saw.W)}</td><td class="n">${g.qty}</td><td class="n">${[g.edges.d1, g.edges.d2, g.edges.w1, g.edges.w2].map(eTxt).join(' ')}</td><td class="n">${g.holes.length || ''}</td><td>${g.secLabel}${g.notes.length || g.grooves.length ? ' · ' + esc([...g.grooves.map(x => `паз ${x.w}×${x.depth} в ${x.at} мм от Д1`), ...g.notes].join('; ')) : ''}</td></tr>`).join('')}
+</table><p class="muted">Длина — вдоль Д1/Д2 (длинные кромки чертежа), ширина — вдоль Ш1/Ш2. Пильный размер = чистовой − кромка ≥ 1 мм. Для декоров «Дуб», «Орех» текстура вдоль длины (у фасадов — вдоль высоты).</p></section>`;
+
+// cutting maps
+html += `<section class="sheet m-task"><h2>Карты раскроя</h2>${N.over.length ? `<div class="warn">Не помещаются на лист: ${N.over.map(o => '№' + o.no).join(', ')}</div>` : ''}<div class="grid2">`;
+for (const s of N.sheets) {
+  const k = 1;
+  html += `<div><div style="display:flex;justify-content:space-between;margin-bottom:6px"><b>${esc(s.mat)}</b><span class="muted">лист ${s.idx}/${s.of} · ${s.L}×${s.W} · ${Math.round(s.use * 100)}% · рез ${fmt((s.cutLen / 1000).toFixed(1))} м</span></div>
+  <svg viewBox="-20 -20 ${s.L + 40} ${s.W + 40}" style="width:100%;background:#faf9f6;border:1px solid #e6e2da">
+  <rect x="0" y="0" width="${s.L}" height="${s.W}" fill="#efe9dd" stroke="#8a8478" stroke-width="4"/>
+  ${s.offcuts.map(o => `<rect x="${o.x + s.trim}" y="${o.y + s.trim}" width="${o.l}" height="${o.w}" fill="#e8f1e4" stroke="#7fa06f" stroke-width="3" stroke-dasharray="14 8"/>${Math.min(o.l, o.w) > 150 ? `<text x="${o.x + s.trim + o.l / 2}" y="${o.y + s.trim + o.w / 2}" font-size="38" text-anchor="middle" dominant-baseline="middle" fill="#4f7a40">остаток ${Math.round(o.l)}×${Math.round(o.w)}</text>` : ''}`).join('')}
+  ${s.pieces.map(p => { const x = p.x + s.trim, y = p.y + s.trim, fs = Math.max(26, Math.min(70, Math.min(p.l, p.w) / 4));
+    return `<rect x="${x}" y="${y}" width="${p.l}" height="${p.w}" fill="#fff" stroke="#1f1e1b" stroke-width="3"/>
+    ${Math.min(p.l, p.w) > 60 ? `<text x="${x + p.l / 2}" y="${y + p.w / 2}" font-size="${fs}" text-anchor="middle" dominant-baseline="middle" fill="#1f1e1b">${p.no}${p.l > 380 && p.w > 160 ? `<tspan x="${x + p.l / 2}" dy="${fs * 1.1}" font-size="${fs * 0.7}" fill="#6f6a60">${Math.round(p.l)}×${Math.round(p.w)}</tspan>` : ''}</text>` : ''}`; }).join('')}
+  </svg></div>`;
+}
+html += `</div></section>`;
+
+// part drawings
+const COL = { 35: '#d4672a', 15: '#8e44ad', 8: '#2f8f5b', 7: '#2b6cb0', 5: '#1f1e1b', 3: '#8a8478' };
+const ECOL = e => (e >= 1 ? '#c0392b' : '#d9a441');
+function drawing(g) {
+  const BW = 900, BH = 300, pad = 60;
+  const sc = Math.min((BW - 2 * pad) / g.L, (BH - 2 * pad) / g.W);
+  const w = g.L * sc, h = g.W * sc, ox = pad, oy = pad + h;
+  const X = u => ox + u * sc, Y = v => oy - v * sc;
+  let s = `<svg viewBox="0 0 ${BW} ${h + 2 * pad}" style="width:100%;max-height:340px">`;
+  s += `<rect x="${ox}" y="${pad}" width="${w}" height="${h}" fill="#f6f3ec" stroke="#1f1e1b" stroke-width="1.5"/>`;
+  const ed = g.edges, et = (x1, y1, x2, y2, v, lx, ly, lab) => v ? `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${ECOL(v)}" stroke-width="${v >= 1 ? 5 : 3}"/><text x="${lx}" y="${ly}" font-size="11" fill="${ECOL(v)}" text-anchor="middle">${lab} ${fmt(v)}</text>` : '';
+  s += et(ox, oy, ox + w, oy, ed.d1, ox + w / 2, oy + 16, 'Д1');
+  s += et(ox, pad, ox + w, pad, ed.d2, ox + w / 2, pad - 8, 'Д2');
+  s += et(ox, pad, ox, oy, ed.w1, ox - 22, pad + h / 2, 'Ш1');
+  s += et(ox + w, pad, ox + w, oy, ed.w2, ox + w + 22, pad + h / 2, 'Ш2');
+  for (const gr of g.grooves) for (const dv of [0, gr.w]) s += `<line x1="${ox}" x2="${ox + w}" y1="${Y(gr.at + dv)}" y2="${Y(gr.at + dv)}" stroke="#6b5a45" stroke-dasharray="6 4"/>`;
+  for (const ho of g.holes) {
+    const c = COL[ho.d] || '#555', x = X(ho.u), y = Y(ho.v);
+    if (ho.f === 'A' || ho.f === 'B') {
+      const rr = Math.max(ho.d / 2 * sc, ho.d >= 30 ? 6 : 2.6);
+      s += `<circle cx="${x}" cy="${y}" r="${rr}" fill="${ho.f === 'A' ? c : 'none'}" stroke="${c}" stroke-width="1.4" ${ho.f === 'B' ? 'stroke-dasharray="2 1.5"' : ''}/>`;
+    } else {
+      const d = { w1: [1, 0], w2: [-1, 0], d1: [0, -1], d2: [0, 1] }[ho.f], L = 12;
+      s += `<path d="M${x} ${y} L${x + d[0] * L - d[1] * 4} ${y - d[1] * L - d[0] * 4} L${x + d[0] * L + d[1] * 4} ${y - d[1] * L + d[0] * 4}Z" fill="#2b6cb0"/>`;
+    }
+  }
+  s += `<text x="${ox - 4}" y="${oy + 30}" font-size="11" fill="#8a8478">0</text>`;
+  s += `<line x1="${ox}" y1="${oy + 34}" x2="${ox + w}" y2="${oy + 34}" stroke="#8a8478"/><text x="${ox + w / 2}" y="${oy + 48}" font-size="12" text-anchor="middle">${fmt(g.L)}</text>`;
+  s += `<line x1="${ox + w + 40}" y1="${pad}" x2="${ox + w + 40}" y2="${oy}" stroke="#8a8478"/><text x="${ox + w + 46}" y="${pad + h / 2}" font-size="12">${fmt(g.W)}</text>`;
+  return s + '</svg>';
+}
+const FACE = { A: { yz: 'пласть A (слева)', xz: 'пласть A (верх)', xy: 'пласть A (лицо)' }, B: { yz: 'пласть B (справа)', xz: 'пласть B (низ)', xy: 'пласть B (тыл)' } };
+const fName = (f, pl) => (FACE[f] ? FACE[f][pl] : 'торец ' + ({ w1: 'Ш1', w2: 'Ш2', d1: 'Д1', d2: 'Д2' }[f]));
+html += `<section class="sheet m-task"><h2>Чертежи деталей: кромка и присадка</h2>
+<div class="legend" style="margin-bottom:14px"><span><i style="background:#d4672a"></i>Ø35×13 чашка петли</span><span><i style="background:#2b6cb0"></i>Ø7 скв. конфирмат</span><span><i style="background:#8e44ad"></i>Ø15×13 эксцентрик</span><span><i style="background:#2f8f5b"></i>Ø8 шкант / Ø8×34 стяжка в торец</span><span><i style="background:#1f1e1b"></i>Ø5×12 полкодержатель / планка / направляющая</span><span><i style="background:#8a8478"></i>Ø3×10 штангодержатель</span><span>▶ Ø5×50 в торец</span><span>○ пунктир — пласть B</span><span><i style="background:#c0392b;border-radius:0"></i>кромка ≥1 мм</span><span><i style="background:#d9a441;border-radius:0"></i>кромка 0,4 мм</span></div>
+<p class="muted" style="margin-top:0">Координаты X — от торца Ш1 вдоль длины, Y — от кромки Д1. Пласть A для вертикальных деталей — левая, для горизонтальных — верхняя, для фасадов — лицевая.</p>`;
+for (const g of G) {
+  if (g.mat === 'glass' || g.mat === 'mirror') continue;
+  const hg = new Map();
+  for (const h of g.holes) { const k = `${h.note}|${h.d}|${h.h}|${h.f}`; if (!hg.has(k)) hg.set(k, []); hg.get(k).push(h); }
+  html += `<div class="part"><div class="ph"><b>№${g.no} ${esc(g.name)}</b><span>${fmt(g.L)} × ${fmt(g.W)} × ${g.T} мм</span><span>${esc(g.label)}</span><span>${g.qty} шт.</span><span>секция ${g.secLabel}</span></div>
+  ${drawing(g)}
+  ${hg.size ? `<table><tr><th>Назначение</th><th>Сторона</th><th class="n">Ø</th><th class="n">Глубина</th><th class="n">Шт</th><th>Координаты X/Y, мм</th></tr>${[...hg.values()].map(hs => `<tr><td>${esc(hs[0].note)}</td><td>${fName(hs[0].f, g.plane)}</td><td class="n">${hs[0].d}</td><td class="n">${hs[0].h}</td><td class="n">${hs.length}</td><td style="font-family:ui-monospace,Menlo,monospace;font-size:11px">${hs.map(h => `${fmt(h.u)}/${fmt(h.v)}`).join('  ')}</td></tr>`).join('')}</table>` : '<p class="muted">Присадки нет.</p>'}
+  ${g.notes.length ? `<p class="muted">${esc(g.notes.join('; '))}</p>` : ''}</div>`;
+}
+html += '</section>';
+doc.innerHTML = html;
+const setMode = m => { document.body.dataset.mode = m; document.querySelectorAll('.bar [data-m]').forEach(b => b.classList.toggle('on', b.dataset.m === m)); history.replaceState(null, '', m === 'task' ? location.pathname : '#' + m); document.title = { task: 'Задание на распил и присадку', kp: 'Коммерческое предложение', labels: 'Этикетки деталей' }[m]; };
+document.querySelectorAll('.bar [data-m]').forEach(b => (b.onclick = () => setMode(b.dataset.m)));
+setMode(['kp', 'labels'].includes(location.hash.slice(1)) ? location.hash.slice(1) : 'task');
+document.getElementById('pr').onclick = () => print();
+document.getElementById('csv').onclick = () => download(toCSV(spec, title), stamp + '.csv', 'text/csv;charset=utf-8');
+document.getElementById('dxf').onclick = () => download(toDXF(spec), stamp + '.dxf', 'application/dxf');
+</script>
+<script src="pwa.js"></script>
+</body>
+</html>
