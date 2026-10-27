@@ -2,6 +2,7 @@
 // Модули стоят в ряд слева направо вплотную (плюс зазор gap), задние стенки на одной плоскости, подъём над полом y.
 import { buildSpec } from './model.js';
 import { normalize, MAX_MODULES } from './rules.js';
+import { roomFrame, roomWarnings } from './room.js';
 import { normalizeWorktop, worktopParts, worktopWarnings } from './worktop.js';
 
 const clone = o => JSON.parse(JSON.stringify(o));
@@ -28,8 +29,10 @@ const toItems = root => moduleList(root).map(m => ({ name: m.name, gap: m.gap, y
 /** Собрать проект обратно из записей: первая становится основным корпусом, остальные — модулями. root меняется на месте. */
 function fromItems(root, items) {
   const [first, ...rest] = items;
+  const room = root.room;
   for (const k of Object.keys(root)) delete root[k];
   Object.assign(root, first.P);
+  if (room) root.room = room;
   root.modName = first.name; if (first.y) root.modY = first.y;
   if (rest.length) root.modules = rest.map(m => ({ name: m.name, gap: m.gap, y: m.y, ...(m.over ? { over: true } : {}), ...(m.turn ? { turn: m.turn } : {}), P: m.P }));
   return normalize(root);
@@ -123,7 +126,15 @@ function placed(spec, i, d) {
  * Собрать проект: спецификация каждого модуля и общая. Для проекта из одного корпуса общая спецификация — та же, что даёт buildSpec.
  * opts.hwFor(P) — параметры фурнитуры корпуса (resolveHw).
  */
-export function buildProject(root, { hwFor } = {}) {
+/** Проект целиком; при заданном помещении (root.room) добавляет привязку к стенам (frame) и замечания по размещению. */
+export function buildProject(root, opts = {}) {
+  const r = buildLayout(root, opts), room = root.room;
+  if (!room) return r;
+  const rw = roomWarnings(r, room);
+  return { ...r, room, frame: roomFrame(r, room), warnings: [...r.warnings, ...rw], spec: rw.length ? { ...r.spec, warnings: [...r.spec.warnings, ...rw] } : r.spec };
+}
+
+function buildLayout(root, { hwFor } = {}) {
   const list = moduleList(root);
   const mods = list.map(m => ({ ...m, spec: buildSpec(m.P, { ...(hwFor ? { hw: hwFor(m.P) } : {}), ...(m.i && root.overrides ? { inherit: root.overrides } : {}) }) }));
   const wt = normalizeWorktop(root.countertop);

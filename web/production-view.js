@@ -74,7 +74,7 @@ export function renderProduction({ P, cat, projName, preview = null, shareToken 
 
   html += `<section id="sec-views" class="sheet m-task"><h2>Общий вид</h2>${mods.map(m => `${multi ? `<h3>${esc(m.name)}</h3>` : ''}<div class="views">${frontView(m.spec, m.P)}${frontView(m.spec, m.P, { fronts: true })}${sideView(m.spec, m.P)}</div>`).join('')}</section>`;
 
-  if (multi || PJ.worktops.length) html += `<section id="sec-plan" class="sheet m-task"><h2>План</h2><div class="views">${planView(PJ)}</div></section>`;
+  if (multi || PJ.worktops.length || PJ.room) html += `<section id="sec-plan" class="sheet m-task"><h2>План</h2><div class="views">${planView(PJ)}</div></section>`;
 
   // смета
   const nz = v => String(v).replace('.', ',');

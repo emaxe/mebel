@@ -9,11 +9,13 @@ export function planView(proj, { width = 900 } = {}) {
   const mods = proj.mods, tops = proj.worktops || [];
   const boxes = mods.map(footprint);
   const tb = tops.map(p => [p.c[0] - p.L / 2, p.c[0] + p.L / 2, p.c[2] - p.W / 2, p.c[2] + p.W / 2]);
-  const all = [...boxes, ...tb];
+  const room = proj.room, fr = proj.frame, rb = room && fr ? [fr.xOf(0), fr.xOf(room.w), fr.zOf(0), fr.zOf(room.d)] : null;
+  const all = [...boxes, ...tb, ...(rb ? [rb] : [])];
   const x0 = Math.min(...all.map(b => b[0])), x1 = Math.max(...all.map(b => b[1])), z0 = Math.min(...all.map(b => b[2])), z1 = Math.max(...all.map(b => b[3]));
   const padL = 70, padR = 70, padT = 50, padB = 90, sc = Math.min((width - padL - padR) / (x1 - x0), 560 / (z1 - z0));
   const X = x => padL + (x - x0) * sc, Z = z => padT + (z - z0) * sc, w = (x1 - x0) * sc, h = (z1 - z0) * sc, H = h + padT + padB;
   let s = `<svg viewBox="0 0 ${width} ${H}" style="width:100%;max-width:${width}px;background:#fff" font-family="Helvetica,Arial,sans-serif" font-size="11" data-plan="1">`;
+  if (rb) s += `<rect x="${X(rb[0])}" y="${Z(rb[2])}" width="${(rb[1] - rb[0]) * sc}" height="${(rb[3] - rb[2]) * sc}" fill="#fbfaf6" stroke="#bdb8ab" stroke-width="1" data-room="1"/>`;
   for (const p of tb) s += `<rect x="${X(p[0])}" y="${Z(p[2])}" width="${(p[1] - p[0]) * sc}" height="${(p[3] - p[2]) * sc}" fill="#e9e6e0" stroke="#6d6a66" stroke-width="1" stroke-dasharray="6 3" data-worktop="1"/>`;
   mods.forEach((m, i) => {
     const b = boxes[i], over = !!m.over, bx = X(b[0]), bz = Z(b[2]), bw = (b[1] - b[0]) * sc, bh = (b[3] - b[2]) * sc;
@@ -51,6 +53,16 @@ export function planView(proj, { width = 900 } = {}) {
   if (r1.length) {
     const right = r1[0].rot < 0, bb = r1.map(footprint), wx = right ? X(Math.max(...bb.map(b => b[1]))) + 6 : X(Math.min(...bb.map(b => b[0]))) - 6;
     s += `<line x1="${wx}" y1="${Z(Math.min(...bb.map(b => b[2])))}" x2="${wx}" y2="${Z(z1)}" stroke="#1f1e1b" stroke-width="3" opacity=".55"/>`;
+  }
+  if (rb) {
+    const wallB = fr.corner === 'R' ? rb[1] : rb[0];
+    s += `<line x1="${X(rb[0])}" y1="${Z(rb[2]) - 6}" x2="${X(rb[1])}" y2="${Z(rb[2]) - 6}" stroke="#1f1e1b" stroke-width="3" opacity=".55"/><line x1="${X(wallB) + (fr.corner === 'R' ? 6 : -6)}" y1="${Z(rb[2])}" x2="${X(wallB) + (fr.corner === 'R' ? 6 : -6)}" y2="${Z(rb[3])}" stroke="#1f1e1b" stroke-width="3" opacity=".55"/>`;
+    for (const o of room.openings) {
+      const col = o.kind === 'door' ? '#c8a26a' : '#6fa8d6', name = o.kind === 'door' ? 'дверь' : 'окно';
+      if (o.wall === 'A') s += `<rect x="${X(fr.xOf(o.x))}" y="${Z(rb[2]) - 9}" width="${o.w * sc}" height="6" fill="${col}" data-opening="${o.kind}"/><text x="${X(fr.xOf(o.x + o.w / 2))}" y="${Z(rb[2]) - 13}" text-anchor="middle" font-size="9" fill="#6f6a60">${name} ${fmt(o.w)}</text>`;
+      else { const wx = X(wallB) + (fr.corner === 'R' ? 3 : -9); s += `<rect x="${wx}" y="${Z(fr.zOf(o.x))}" width="6" height="${o.w * sc}" fill="${col}" data-opening="${o.kind}"/>`; }
+    }
+    s += `<text x="${X(rb[0])}" y="${Z(rb[3]) + 14}" font-size="10" fill="#6f6a60">Помещение ${fmt(room.w)} × ${fmt(room.d)} мм, потолок ${fmt(room.h)}${room.skirt ? `, плинтус ${fmt(room.skirt)}×${fmt(room.skirtT)}` : ''}</text>`;
   }
   return s + '</svg>';
 }

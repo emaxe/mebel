@@ -9,6 +9,7 @@ import { modelsFor, selKey, variantOf, resolveHw, KIND_LABELS } from './fittings
 import { HW_PARAM_DEFS, HW_DEFAULTS } from './hwparams.js';
 import { dimensions } from './dims.js';
 import { normalizeWorktop, WORKTOP_DEFAULT, CUTOUT_PRESETS, worktopRuns } from './worktop.js';
+import { normalizeRoom, ROOM_DEFAULT, OPENING_KINDS, MAX_OPENINGS } from './room.js';
 import { buildProject, moduleList, addModule, duplicateModule, removeModule, moveModule, setModuleProps, cabinetOf, moduleCount } from './project.js';
 import { orientLines, edgeNames, machiningRows } from './partinfo.js';
 import { autoFixAsync, kinProblems } from './autofix.js';
@@ -837,6 +838,38 @@ async function editWorktop() {
   act(() => { if (on) root.countertop = wt; else delete root.countertop; })();
   drawModules(); render(true);
 }
+async function editRoom() {
+  const cur = normalizeRoom(root.room);
+  let on = !!cur;
+  const rm = JSON.parse(JSON.stringify(cur || ROOM_DEFAULT));
+  const body = el('div', 'dbody wtbody');
+  const num = (obj, key, min, max) => Object.assign(el('input'), { type: 'number', value: obj[key], min, max, step: 1, onchange() { const v = Math.round(+this.value); obj[key] = Number.isFinite(v) && this.value !== '' ? Math.max(min, Math.min(max, v)) : obj[key]; this.value = obj[key]; } });
+  const lab = (t, inp) => { const l = el('label', '', t); l.append(inp); return l; };
+  const draw = () => {
+    body.textContent = '';
+    const cb = Object.assign(el('input'), { type: 'checkbox', checked: on }), head = el('label', 'wtrow'); cb.onchange = () => { on = cb.checked; draw(); };
+    head.append(cb, ' Помещение задано');
+    body.append(head, el('p', 'hint2', 'Стена A — основная, вдоль неё стоит первый ряд. Стена B — перпендикулярная, у угловой кухни ряд встаёт в тот же угол. Проверки покажут выход за стены и потолок, шкафы в окне или двери и плинтус.'));
+    if (!on) return;
+    const r1 = el('div', 'wtrow'); r1.append(lab('Стена A, мм', num(rm, 'w', 500, 20000)), lab('Стена B, мм', num(rm, 'd', 500, 20000)), lab('Потолок, мм', num(rm, 'h', 1500, 5000)), lab('Отступ от угла, мм', num(rm, 'x', 0, 20000))); body.append(r1);
+    const r2 = el('div', 'wtrow'); r2.append(lab('Плинтус: высота, мм (0 — нет)', num(rm, 'skirt', 0, 300)), lab('Плинтус: толщина, мм', num(rm, 'skirtT', 5, 60))); body.append(r2);
+    body.append(el('h4', '', 'Проёмы'));
+    rm.openings.forEach((o, i) => {
+      const r = el('div', 'wtcut'), wall = el('select');
+      [['A', 'стена A'], ['B', 'стена B']].forEach(([v, l]) => wall.append(new Option(l, v, false, o.wall === v)));
+      wall.onchange = () => { o.wall = wall.value; draw(); };
+      const del = el('button', '', '×'); del.title = 'Убрать проём'; del.onclick = () => { rm.openings.splice(i, 1); draw(); };
+      r.append(el('b', '', OPENING_KINDS[o.kind].label), wall, lab('От начала стены', num(o, 'x', 0, 20000)), lab('Ширина', num(o, 'w', 200, 20000)), lab('От пола', num(o, 'y', 0, 4800)), lab('Высота', num(o, 'h', 200, 4800)), del); body.append(r);
+    });
+    const add = el('div', 'wtrow');
+    for (const [k, p] of Object.entries(OPENING_KINDS)) { const b = el('button', '', '+ ' + p.label); b.disabled = rm.openings.length >= MAX_OPENINGS; b.onclick = () => { rm.openings.push({ kind: k, wall: 'A', x: 0, w: p.w, y: p.y, h: p.h }); draw(); }; add.append(b); }
+    body.append(add);
+  };
+  draw();
+  if (!(await modal('Помещение', body, { ok: 'Применить', wide: true }))) return;
+  act(() => { if (on) root.room = rm; else delete root.room; })();
+  drawModules(); render(true);
+}
 function drawModules() {
   modsBox.textContent = '';
   const list = moduleList(root), multi = list.length > 1;
@@ -854,6 +887,8 @@ function drawModules() {
     wb.title = hasBase ? 'Столешница над нижними кухонными модулями: размеры, свесы, вырезы под мойку и варочную панель' : 'Нет нижних кухонных модулей: столешница появится, когда они будут добавлены';
     wb.onclick = editWorktop; strip.append(wb);
   }
+  const rb = el('button', 'modchip' + (root.room ? ' on2' : ' add'), root.room ? 'Помещение ✓' : '+ Помещение');
+  rb.title = 'Стены, потолок, окна и двери, плинтус: проверка размещения проекта и вид в 3D и на плане'; rb.onclick = editRoom; strip.append(rb);
   modsBox.append(strip);
   if (!multi) return;
   const cur = list[active], card = el('div', 'modcard');

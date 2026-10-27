@@ -174,7 +174,8 @@ export function build3DProject(THREE, proj, view = {}, opts = {}) {
     return c;
   });
   const wt = proj.worktops && proj.worktops.length ? proj.worktops : null;
-  if (!proj.multi && !wt) return built[0];
+  const room = view.room && proj.frame ? view.room : null;
+  if (!proj.multi && !wt && !room) return built[0];
   const grp = new THREE.Group();
   built.forEach((c, i) => { const m = proj.mods[i]; c.position.set(m.x * k, m.y * k, m.z * k); c.rotation.y = m.rot || 0; grp.add(c); });
   if (wt) {
@@ -182,5 +183,29 @@ export function build3DProject(THREE, proj, view = {}, opts = {}) {
     c.traverse(o => { o.userData.mod = -1; });
     grp.add(c);
   }
+  if (room) grp.add(buildRoom3D(THREE, proj.frame, room));
   return grp;
+}
+
+/** Оболочка помещения: пол, стены A и B, проёмы и плинтус; не выбирается мышью (нет part и section). */
+export function buildRoom3D(THREE, fr, room) {
+  const k = 1 / 1000, g = new THREE.Group(), left = fr.corner !== 'R';
+  const mat = (color, opacity) => new THREE.MeshStandardMaterial({ color, transparent: opacity < 1, opacity, side: THREE.DoubleSide, depthWrite: opacity >= 1, roughness: 1, metalness: 0 });
+  const x0 = fr.xOf(0), x1 = fr.xOf(room.w), z0 = fr.zOf(0), z1 = fr.zOf(room.d), wx = left ? x0 : x1;
+  const add = (w, h, color, op, pos, ry = 0) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w * k, h * k), mat(color, op)); m.position.set(...pos); m.rotation.y = ry; g.add(m); return m; };
+  const floor = add(room.w, room.d, 0xe6e1d7, 1, [((x0 + x1) / 2) * k, -0.002, ((z0 + z1) / 2) * k]); floor.rotation.x = -Math.PI / 2;
+  add(room.w, room.h, 0xf3f1ec, 0.35, [((x0 + x1) / 2) * k, (room.h / 2) * k, (z0 - 2) * k]);
+  add(room.d, room.h, 0xf3f1ec, 0.35, [(wx + (left ? -2 : 2)) * k, (room.h / 2) * k, ((z0 + z1) / 2) * k], Math.PI / 2);
+  for (const o of room.openings) {
+    const col = o.kind === 'door' ? 0xc8a26a : 0x8fc1e6, cy = (o.y + o.h / 2) * k;
+    if (o.wall === 'A') add(o.w, o.h, col, 0.8, [fr.xOf(o.x + o.w / 2) * k, cy, (z0 - 1) * k]);
+    else add(o.w, o.h, col, 0.8, [(wx + (left ? -1 : 1)) * k, cy, fr.zOf(o.x + o.w / 2) * k], Math.PI / 2);
+  }
+  if (room.skirt > 0) {
+    const box = (w, h, d, pos) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w * k, h * k, d * k), mat(0xf7f5f0, 1)); m.position.set(...pos); g.add(m); };
+    box(room.w, room.skirt, room.skirtT, [((x0 + x1) / 2) * k, (room.skirt / 2) * k, (z0 + room.skirtT / 2) * k]);
+    box(room.skirtT, room.skirt, room.d, [(wx + (left ? 1 : -1) * (room.skirtT / 2)) * k, (room.skirt / 2) * k, ((z0 + z1) / 2) * k]);
+  }
+  g.traverse(o => { o.userData.room = true; });
+  return g;
 }

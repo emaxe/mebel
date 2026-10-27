@@ -104,6 +104,7 @@ export function normalizeCutouts(list) {
 
 /** Bring a project to what its type supports: ranges, doors, antresol, items, front mode. Idempotent. */
 import { normalizeWorktop } from './worktop.js';
+import { normalizeRoom } from './room.js';
 export const SCHEMA = 3;
 const MIGRATIONS = [P => P, P => P, P => P];
 export const MAX_MODULES = 12;
@@ -128,12 +129,13 @@ export function normalizeModules(P) {
     m.gap = int(m.gap, 0, 2000); m.y = int(m.y, 0, 3000);
     if (m.over) m.over = true; else delete m.over;
     if (m.turn !== 'L' && m.turn !== 'R') delete m.turn;
-    delete m.P.modules; delete m.P.modName; delete m.P.modY; delete m.P.countertop;
+    delete m.P.modules; delete m.P.modName; delete m.P.modY; delete m.P.countertop; delete m.P.room;
     normalize(m.P);
   }
   let turned = false;
   for (const m of P.modules) { if (m.turn && (m.over || turned)) delete m.turn; if (m.turn) turned = true; }
   if (!P.modules.length) delete P.modules;
+  if (P.room !== undefined) { const r = normalizeRoom(P.room); if (r) P.room = r; else delete P.room; }
   if (P.countertop !== undefined) { const w = normalizeWorktop(P.countertop); if (w) P.countertop = w; else delete P.countertop; }
   if (typeof P.modName === 'string' && P.modName.trim()) P.modName = P.modName.trim().slice(0, 40); else delete P.modName;
   if (P.modY !== undefined) { P.modY = int(P.modY, 0, 3000); if (!P.modY) delete P.modY; }
@@ -193,7 +195,7 @@ export function normalize(P) {
     normalizeZone(s, R, ih, t);
   }
   normalizeModules(P);
-  if ([P, ...(P.modules || []).map(m => m.P)].some(Q => Q.sections.some(s => s.zone))) P.schema = 3; // зоны с колонками-ячейками читают только клиенты схемы 3
+  if (P.room || [P, ...(P.modules || []).map(m => m.P)].some(Q => Q.sections.some(s => s.zone))) P.schema = 3; // зоны с колонками-ячейками читают только клиенты схемы 3
   return P;
 }
 
