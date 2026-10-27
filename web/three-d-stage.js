@@ -134,19 +134,6 @@
     setTimeout(() => URL.revokeObjectURL(url), 4000);
   }
 
-  /** Tell the host an export attempt settled — telemetry only. The host
-   *  (HTMLViewer) verifies the source and re-reads these fields defensively
-   *  before counting; nothing else crosses the frame boundary. Guarded so
-   *  telemetry can never break the download path. */
-  function notifyExport(format, ok) {
-    try {
-      window.parent.postMessage(
-        { type: 'omelette:notify-3d-export', format: format, ok: ok === true },
-        '*'
-      );
-    } catch (e) {}
-  }
-
   class ThreeDStage extends HTMLElement {
     constructor() {
       super();
@@ -280,6 +267,7 @@
       this._loop = () => {
         controls.update();
         renderer.render(scene, camera);
+        if (this.onFrame) this.onFrame();
       };
       // Detached while three.js was fetching? Stay idle — the
       // connectedCallback resume starts the loop and observer on
@@ -389,13 +377,7 @@
      *  disabled until the model loads) and reports nothing. */
     async _runExport(format) {
       if (!this._object) return;
-      try {
-        await (format === 'obj' ? this._exportObj() : this._exportGlb());
-        notifyExport(format, true);
-      } catch (err) {
-        notifyExport(format, false);
-        throw err;
-      }
+      await (format === 'obj' ? this._exportObj() : this._exportGlb());
     }
 
     async _exportObj() {

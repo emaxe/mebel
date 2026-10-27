@@ -51,6 +51,21 @@
   .menu .sep{height:1px;background:#e8e4dc;margin:4px 0}
   .mob-only{display:none}
   /* плашка «Вид» поверх 3D */
+  .dimsvg,.dimlabels{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:4;overflow:hidden}
+  .dimsvg line{stroke:#6b5a45;stroke-width:1}
+  .dimsvg line.ext{stroke:#a39a89;stroke-dasharray:3 3}
+  .dimsvg line.gap{stroke:#2a6fd4}
+  .dimlabels button{position:absolute;transform:translate(-50%,-50%);font:11px ui-monospace,Menlo,monospace;color:#3a362f;background:rgba(255,255,255,.94);border:1px solid #c9c2b4;border-radius:4px;padding:0 5px;line-height:17px;pointer-events:auto;cursor:text;white-space:nowrap}
+  .dimlabels button:hover{border-color:#6b5a45}
+  .dimlabels button.gap{color:#2a6fd4;border-color:#b5cdf0;pointer-events:none;cursor:default}
+  .dimlabels input{width:54px;font:inherit;border:0;outline:0;background:transparent;text-align:center;padding:0}
+  .partcard{position:absolute;top:12px;right:12px;z-index:5;width:250px;max-height:60%;overflow:auto;background:rgba(255,255,255,.96);border:1px solid #d9d4ca;border-radius:10px;padding:10px 12px;font-size:12px;box-shadow:0 2px 10px rgba(0,0,0,.08)}
+  .partcard[hidden]{display:none}
+  .partcard .pc-head{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:6px;font-size:13px}
+  .partcard .pc-close{border:0;background:none;font-size:18px;line-height:1;cursor:pointer;color:#6f6a60;padding:0 2px}
+  .partcard .pc-row{display:flex;justify-content:space-between;gap:10px;padding:2px 0;border-top:1px solid #f0ece3}
+  .partcard .pc-row span:first-child{color:#8a8478;flex:none}
+  .partcard .pc-row span:last-child{text-align:right}
   .viewbar{position:absolute;left:16px;bottom:16px;z-index:5;display:flex;gap:16px;align-items:center;background:rgba(255,255,255,.94);border:1px solid #d9d4ca;border-radius:10px;padding:8px 14px;box-shadow:0 2px 10px rgba(0,0,0,.1)}
   .viewbar .row{margin:0;flex-direction:row;align-items:center;gap:8px}
   .viewbar .lab{gap:8px;white-space:nowrap}
@@ -95,6 +110,8 @@
   .dims{font:12px/1.4 ui-monospace,Menlo,monospace;color:#6f6a60;margin-bottom:12px}
   h2{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8a8478;font-weight:600;margin:18px 0 10px}
   .warn{background:#fff4e5;border:1px solid #f0c48a;border-radius:6px;padding:8px 10px;font-size:12px;margin-bottom:12px;display:flex;flex-direction:column;gap:3px}
+  .warn .link{cursor:pointer;border-radius:4px;padding:1px 3px;margin:0 -3px}
+  .warn .link:hover,.warn .link:focus-visible{background:#fde3bd;outline:none}
   .warn .fixed{color:#2f6b3a;background:#e9f5ec;border-radius:4px;padding:4px 6px}
   .warn .fixbtn{margin-top:4px;border:1px solid #22211e;background:#22211e;color:#faf9f6;border-radius:6px;padding:8px;font:inherit;font-size:12.5px;cursor:pointer;min-height:36px}
   .warn .fixbtn:hover{background:#3a3833}
@@ -120,6 +137,8 @@
   .row{display:flex;flex-direction:column;gap:5px;margin-bottom:12px}
   .lab{display:flex;justify-content:space-between;gap:8px}
   .lab b{font-weight:400;font-family:ui-monospace,Menlo,monospace;font-size:12px;color:#6f6a60}
+  .hintline{font-size:11px;color:#8a8478;min-height:0}
+  .lab input.num{width:62px;text-align:right;font:inherit;color:#3a362f;border:1px solid #d8d2c6;border-radius:4px;padding:1px 4px;background:#fff}
   input[type=range]{width:100%;accent-color:#6b5a45;margin:0}
   .seg{display:flex;flex-wrap:wrap;gap:4px}
   .seg button{flex:1 1 auto;border:1px solid #d9d4ca;background:#fff;border-radius:6px;padding:6px 8px;font:inherit;font-size:12px;cursor:pointer;color:#22211e}
@@ -196,6 +215,7 @@
     .top .mwrap:first-of-type{flex:1}
     .stagebox{position:fixed;left:0;right:0;top:48px;bottom:0;z-index:0}
     three-d-stage{position:absolute;inset:0;height:100%}
+    .partcard{top:8px;left:8px;right:8px;width:auto;max-height:28%}
     .viewbar{left:8px;right:8px;bottom:84px;gap:10px;flex-wrap:wrap;justify-content:space-between;padding:6px 10px}
     .viewbar input[type=range]{width:90px}
     aside{position:fixed;left:0;right:0;bottom:0;z-index:20;height:72px;max-height:92dvh;border-right:0;border-radius:16px 16px 0 0;box-shadow:0 -6px 24px rgba(0,0,0,.2);padding:0 14px 28px;transition:height .22s ease;overscroll-behavior:contain}
@@ -267,6 +287,9 @@
   <div class="stagebox">
     <three-d-stage name="mebel" no-ui></three-d-stage>
     <div class="viewbar" id="view" aria-label="Вид"></div>
+    <svg class="dimsvg" id="dimsvg" aria-hidden="true"></svg>
+    <div class="dimlabels" id="dimlabels"></div>
+    <div class="partcard" id="partcard" hidden aria-live="polite"></div>
   </div>
 </div>
 <dialog id="dlg"></dialog>

@@ -80,16 +80,19 @@ export function build3D(THREE, spec, P, opts = {}) {
     }
     return groups[g.id];
   }
+  let curPart = null;
   const add = (parent, name, geo, mat, c, sec) => {
     const m = new THREE.Mesh(geo, mat); m.name = name;
     m.position.set((c[0] - parent.off[0]) * k, (c[1] - parent.off[1]) * k, (c[2] - parent.off[2]) * k);
     if (sec) m.userData.section = sec - 1;
+    if (curPart !== null) m.userData.part = curPart;
     parent.obj.add(m); return m;
   };
   const boxGeo = (x, y, z) => new THREE.BoxGeometry(x * k, y * k, z * k);
 
   spec.parts.forEach((p, i) => {
     if (hidden(p.group) || skipStage(p.asm)) return;
+    curPart = i;
     const par = parentFor(p.group);
     const mat = hl(p.asm, M[p.mat]);
     const [sx, sy, sz] = dims(p);
@@ -116,6 +119,7 @@ export function build3D(THREE, spec, P, opts = {}) {
     }
   });
 
+  curPart = null;
   const links = [];
   spec.extras.forEach(e => {
     if (hidden(e.group) || skipStage(e.asm)) return;

@@ -1,4 +1,6 @@
 // Несколько проектов в localStorage. Без DOM. Текущий проект дублируется в 'mebel-v3', его читает production.html.
+import { SCHEMA, schemaOf } from './rules.js';
+
 export const PROJECTS_KEY = 'mebel-projects';
 export const CURRENT_KEY = 'mebel-current';
 export const LEGACY_KEY = 'mebel-v3';
@@ -48,5 +50,6 @@ export function parseProjectFile(text) {
   let o; try { o = JSON.parse(text); } catch { throw new Error('Файл не похож на JSON'); }
   const P = o && o.P ? o.P : o;
   if (!P || typeof P !== 'object' || !Array.isArray(P.sections) || !P.sections.length) throw new Error('В файле нет проекта: нужны секции (sections)');
+  if (schemaOf(P) > SCHEMA) throw new Error('Проект создан в более новой версии конструктора: обновите приложение');
   return { name: (o && o.name) || 'Импорт', P };
 }

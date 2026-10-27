@@ -89,7 +89,21 @@ export function normalizeCutouts(list) {
 }
 
 /** Bring a project to what its type supports: ranges, doors, antresol, items, front mode. Idempotent. */
+export const SCHEMA = 1;
+const MIGRATIONS = [P => P];
+
+export function schemaOf(P) { return Number.isInteger(P.schema) && P.schema >= 0 ? P.schema : 0; }
+
+export function migrate(P) {
+  let v = schemaOf(P);
+  if (v > SCHEMA) return false;
+  for (; v < SCHEMA; v++) MIGRATIONS[v](P);
+  P.schema = SCHEMA;
+  return true;
+}
+
 export function normalize(P) {
+  migrate(P);
   if (!TYPE_RULES[P.type]) P.type = 'wardrobe';
   const R = TYPE_RULES[P.type], t = P.thickness;
   P.height = clamp(P.height, ...R.height); P.depth = clamp(P.depth, ...R.depth);
@@ -212,6 +226,34 @@ export function redistribute(sec, ih, t, { s32 = false } = {}) {
  * Resize: the inner height changed from oldIh to newIh. 'prop' keeps every element at the same relative place
  * (drawer heights scale too, stacks stay gapless); 'even' scales fixed parts and re-spreads shelves and drawers evenly.
  */
+export function sectionOfMessage(text, n) {
+  const m = /[Сс]екци[яи]\s+(\d+)/.exec(text), i = m ? +m[1] - 1 : -1;
+  return i >= 0 && i < n ? i : null;
+}
+
+export const totalWidth = P => P.sections.reduce((a, s) => a + s.width, 0) + (P.sections.length + 1) * P.thickness;
+
+export function fitWidth(P, W) {
+  const [lo, hi] = rulesOf(P).secW, n = P.sections.length, t = P.thickness;
+  const target = clamp(Math.round(W) - (n + 1) * t, n * lo, n * hi), w0 = P.sections.map(s => s.width), w = w0.slice(), fixed = new Set();
+  for (let it = 0; it <= n; it++) {
+    const rest = w0.map((_, i) => i).filter(i => !fixed.has(i));
+    const k = (target - [...fixed].reduce((a, i) => a + w[i], 0)) / rest.reduce((a, i) => a + w0[i], 0);
+    let clamped = false;
+    for (const i of rest) { const v = w0[i] * k; if (v < lo || v > hi) { w[i] = clamp(v, lo, hi); fixed.add(i); clamped = true; } else w[i] = v; }
+    if (!clamped) break;
+  }
+  const r = w.map(Math.round);
+  let diff = target - r.reduce((a, v) => a + v, 0);
+  while (diff) {
+    const step = Math.sign(diff), order = r.map((_, i) => i).filter(i => r[i] + step >= lo && r[i] + step <= hi).sort((a, b) => r[b] - r[a]);
+    if (!order.length) break;
+    r[order[0]] += step; diff -= step;
+  }
+  P.sections.forEach((s, i) => { s.width = r[i]; });
+  return totalWidth(P);
+}
+
 export function fitSections(P, oldIh, newIh, mode = 'prop') {
   if (!oldIh || !newIh || oldIh === newIh) return;
   const r = newIh / oldIh, t = P.thickness;

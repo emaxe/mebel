@@ -1,13 +1,14 @@
 import { buildSpec, isDrawer } from './model.js';
 import { build3D } from './build3d.js';
-import { toCSV, toDXF, groupParts, nest } from './export.js';
+import { toCSV, toDXF, groupParts, nest, partKey, sawSize } from './export.js';
 import { checkBuild, panelIssues } from './check.js';
 import { assemblySteps } from './assembly.js';
 import { modelsFor, selKey, variantOf, resolveHw, KIND_LABELS } from './fittings.js';
 import { HW_PARAM_DEFS, HW_DEFAULTS } from './hwparams.js';
-import { orientLines } from './partinfo.js';
+import { dimensions } from './dims.js';
+import { orientLines, edgeNames, machiningRows } from './partinfo.js';
 import { autoFixAsync, kinProblems } from './autofix.js';
-import { MIN_DRAWER_H, FILL_LABELS, rulesOf, makePreset, normalize, fillItems, innerH, autoShelves, stepShelves, autoDrawers, packDrawers, redistribute, fitSections, clamp } from './rules.js';
+import { MIN_DRAWER_H, FILL_LABELS, rulesOf, makePreset, normalize, fillItems, innerH, autoShelves, stepShelves, fitWidth, totalWidth, sectionOfMessage, autoDrawers, packDrawers, redistribute, fitSections, clamp } from './rules.js';
 import { loadCatalog, saveCatalog, sanitizeCatalog, sheetFor, isTextured, DEFAULT_CATALOG, CATALOG_KEY, catalogHooks } from './catalog.js';
 import { loadProjects, saveProjects, newId, uniqueName, projectFile, parseProjectFile, hooks, PROJECTS_KEY, CURRENT_KEY, LEGACY_KEY, NAME_KEY } from './projects.js';
 import { putThumb, getThumb, getLocalThumb, delThumb, setRemote } from './thumbs.js';
@@ -32,11 +33,13 @@ const usePlaceholder = () => { placeholder = true; cur = newId(); db[cur] = { na
 if (!cur) usePlaceholder();
 let P = normalize(db[cur].P);
 P.asmStep = 0; // пошаговая сборка в 3D — режим просмотра, при открытии проекта выключен
-let sel = 0, model, spec, outline, asmSteps = [], hwp;
+let sel = 0, selPartKey = null, partBox = null, model, spec, outline, asmSteps = [], hwp;
 let sync = null, account = null; // сервер необязателен: без него приложение остаётся локальным
 const savedEl = document.getElementById('saved');
 let savedTimer;
+let saveTimer = 0, pendingSave = false;
 const save = () => {
+  clearTimeout(saveTimer); pendingSave = false;
   if (placeholder || !db[cur]) return;
   db[cur].P = P; db[cur].updated = Date.now();
   const ok = saveProjects(db, cur);
@@ -44,6 +47,9 @@ const save = () => {
   savedEl.className = 'saved ' + (ok ? 'ok' : 'err');
   clearTimeout(savedTimer); if (ok) savedTimer = setTimeout(() => (savedEl.className = 'saved'), 1500);
 };
+const saveSoon = () => { pendingSave = true; clearTimeout(saveTimer); saveTimer = setTimeout(save, 300); };
+addEventListener('pagehide', () => { if (pendingSave) save(); });
+document.addEventListener('visibilitychange', () => { if (document.hidden && pendingSave) save(); });
 
 // ── отмена и повтор: каждая правка — один шаг (перетаскивание ползунка тоже один); параметры вида (открыть двери и т. п.) не записываются
 const hist = [], redoSt = [];
@@ -70,6 +76,23 @@ addEventListener('keydown', e => {
   if (typing || document.getElementById('dlg').open || document.getElementById('projDlg').open) return;
   const k = e.key.toLowerCase();
   if (k === 'z' && !e.shiftKey) { e.preventDefault(); undo(); } else if ((k === 'z' && e.shiftKey) || k === 'y') { e.preventDefault(); redo(); }
+});
+
+let secClip = null;
+addEventListener('keydown', e => {
+  if (e.altKey) return;
+  const t = e.target, mod = e.metaKey || e.ctrlKey, k = e.key.toLowerCase();
+  const typing = t && (t.isContentEditable || /^(textarea|select|input)$/i.test(t.tagName));
+  const free = !t || t === document.body || t.tagName === 'THREE-D-STAGE' || t.tagName === 'CANVAS';
+  if (document.getElementById('dlg').open || document.getElementById('projDlg').open) return;
+  if (e.key === 'Escape' && selPartKey && !typing) { selPartKey = null; highlight(); return; }
+  const redraw = () => { drawSections(); render(true); };
+  const insert = json => { if (P.sections.length >= R().maxSec) return false; act(() => { P.sections.splice(sel + 1, 0, JSON.parse(json)); sel++; })(); redraw(); return true; };
+  if (!mod && free && (e.key === 'Delete' || e.key === 'Backspace') && P.sections.length > 1) { e.preventDefault(); act(() => { P.sections.splice(sel, 1); sel = Math.max(0, sel - 1); })(); redraw(); }
+  else if (!mod && free && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) { const n = sel + (e.key === 'ArrowLeft' ? -1 : 1); if (n >= 0 && n < P.sections.length) { e.preventDefault(); select(n); } }
+  else if (mod && !typing && k === 'c' && !String(getSelection()).length) { secClip = JSON.stringify(P.sections[sel]); e.preventDefault(); }
+  else if (mod && !typing && k === 'v' && secClip) { if (insert(secClip)) e.preventDefault(); }
+  else if (mod && !typing && k === 'd') { e.preventDefault(); insert(JSON.stringify(P.sections[sel])); }
 });
 
 // what the current project actually contains: controls for absent things are hidden
@@ -104,9 +127,9 @@ function kinematicWarnings() {
 let fixing = false;
 async function fixAll() {
   if (fixing) return;
-  fixing = true; snap();
+  fixing = true; beginEdit();
   const btn = document.querySelector('.fixbtn'); if (btn) { btn.disabled = true; btn.textContent = 'Исправляю…'; }
-  try { fixNote = await autoFixAsync(P, { hw: hwp }); } finally { fixing = false; }
+  try { fixNote = await autoFixAsync(P, { hw: hwp }); } finally { fixing = false; endEdit(); }
   if (fixNote.partial) fixNote.log.push('время подбора вышло: нажмите ещё раз, чтобы продолжить');
   kinKey = '';
   drawAll(); render(false);
@@ -122,8 +145,17 @@ function renderWarn(full) {
   if (note && note.log.length) { const d = el('div', 'fixed'); d.textContent = 'Исправлено: ' + note.log.join('; '); w.append(d); }
   const has = all.length > 0 || issues.length > 0;
   if (note && !note.log.length && has) w.append(el('div', 'fixed', 'Автоматически исправить не удалось — измените параметры вручную.'));
-  all.forEach(x => w.append(el('div', '', x)));
-  issues.forEach(x => w.append(el('div', '', x)));
+  const line = x => {
+    const d = el('div', '', x), i = sectionOfMessage(x, P.sections.length);
+    if (i !== null) {
+      d.classList.add('link'); d.tabIndex = 0; d.title = `Показать секцию ${i + 1}`;
+      const go = () => { setTab('sections'); select(i); };
+      d.onclick = go; d.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } };
+    }
+    return d;
+  };
+  all.forEach(x => w.append(line(x)));
+  issues.forEach(x => w.append(line(x)));
   if (!ready) w.append(el('div', 'hint2', 'Проверяю конструкцию…'));
   if (has) { const b = el('button', 'fixbtn', 'Исправить автоматически'); b.title = 'Раздвинет перекрывающиеся элементы, сдвинет полки от петель, подберёт ручки и фасады так, чтобы всё открывалось'; b.onclick = fixAll; w.append(b); }
   w.style.display = w.childNodes.length ? '' : 'none';
@@ -133,7 +165,7 @@ function render(frame) {
   sel = Math.min(sel, P.sections.length - 1);
   hwp = resolveHw(cat, P);
   spec = buildSpec(P, { hw: hwp });
-  save();
+  saveSoon();
   let asm = null;
   if (P.asmStep > 0) {
     asmSteps = assemblySteps(spec, groupParts(spec), P);
@@ -144,6 +176,7 @@ function render(frame) {
   stage.setObject(model, { keepCamera: !frame, floorY: 0 });
   drawAsmBar();
   const m = spec.meta;
+  const wi = document.getElementById('totalW'); if (wi && document.activeElement !== wi) wi.value = Math.round(m.W);
   document.getElementById('dims').textContent = `${Math.round(m.W)} × ${P.height} × ${P.depth} мм · деталей: ${spec.parts.length}`;
   drawHeader(); scheduleThumb();
   if (fixNote) { panelNote = fixNote; fixNote = null; }
@@ -152,8 +185,100 @@ function render(frame) {
   document.querySelectorAll('[data-when]').forEach(e => (e.style.display = e._when() ? '' : 'none'));
   highlight();
 }
+const partIdOf = p => `${p.name}|${p.sec}|${p.c.map(v => Math.round(v)).join(',')}`;
+const partCard = document.getElementById('partcard');
+function hidePartCard() { partCard.hidden = true; partCard.textContent = ''; }
+function showPartCard(p) {
+  const n = v => String(Math.round(v * 10) / 10).replace('.', ',');
+  const g = groupParts(spec).find(x => partKey(x) === partKey(p)), saw = sawSize(p), e = edgeNames(p.plane);
+  partCard.textContent = '';
+  const head = el('div', 'pc-head'), close = el('button', 'pc-close', '×'); close.title = 'Снять выделение (Esc)';
+  close.onclick = () => { selPartKey = null; highlight(); };
+  head.append(el('b', '', p.name), close); partCard.append(head);
+  const row = (k, v) => { if (v === '' || v == null) return; const r = el('div', 'pc-row'); r.append(el('span', '', k), el('span', '', v)); partCard.append(r); };
+  row('В спецификации', g ? `№${g.no}${g.qty > 1 ? `, всего ${g.qty} шт.` : ''}` : '');
+  row('Секция', p.sec ? String(p.sec) : '');
+  row('Материал', p.label ? `${p.label}, ${n(p.T)} мм` : '');
+  row('Размер', `${n(p.L)} × ${n(p.W)} мм`);
+  if (saw.L !== p.L || saw.W !== p.W) row('Пильный', `${n(saw.L)} × ${n(saw.W)} мм`);
+  const edges = Object.entries(p.edges || {}).filter(([, v]) => v).map(([k, v]) => `${e[k]} ${n(v)}`);
+  row('Кромка', edges.join('; '));
+  row('Отверстий', p.holes.length ? String(p.holes.length) : '');
+  row('Пазов', p.grooves.length ? String(p.grooves.length) : '');
+  const mach = machiningRows(p).map(m => m.title);
+  row('Фрезеровка', mach.join('; '));
+  for (const t of p.notes || []) row('', t);
+  partCard.hidden = false;
+}
+function partOutline() {
+  const sc = stage._scene;
+  if (partBox) { sc.remove(partBox); partBox.geometry.dispose(); partBox = null; }
+  const idx = selPartKey ? spec.parts.findIndex(p => partIdOf(p) === selPartKey) : -1;
+  if (idx < 0) { selPartKey = null; hidePartCard(); return; }
+  model.updateMatrixWorld(true);
+  const box = new THREE.Box3();
+  model.traverse(o => { if (o.isMesh && o.userData.part === idx) box.expandByObject(o); });
+  if (box.isEmpty()) { hidePartCard(); return; }
+  const size = box.getSize(new THREE.Vector3()).addScalar(0.006), c = box.getCenter(new THREE.Vector3());
+  partBox = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(size.x, size.y, size.z)), new THREE.LineBasicMaterial({ color: 0x2a6fd4, depthTest: false, transparent: true }));
+  partBox.position.copy(c); partBox.renderOrder = 11; sc.add(partBox);
+  showPartCard(spec.parts[idx]);
+}
+const dimSvg = document.getElementById('dimsvg'), dimBox = document.getElementById('dimlabels');
+const dimPrefs = (() => { try { return { on: localStorage.getItem('mebel-dims') !== '0' }; } catch { return { on: true }; } })();
+let dimEls = [], dimKey = '';
+const NS = 'http://www.w3.org/2000/svg';
+function applyDim(edit, v) {
+  const R_ = rulesOf(P);
+  if (edit.k === 'W') act(() => fitWidth(P, v))();
+  else if (edit.k === 'height') act(() => { const old = P.height; P.height = clamp(v, ...R_.height); if (P.fit) fitSections(P, innerH({ ...P, height: old }), innerH(P), P.fitMode); })();
+  else if (edit.k === 'depth') act(() => { P.depth = clamp(v, ...R_.depth); })();
+  else if (edit.k === 'sec') act(() => { P.sections[edit.i].width = clamp(v, ...R_.secW); })();
+  drawAll(); render(true);
+}
+function buildDims() {
+  dimBox.textContent = ''; dimSvg.textContent = ''; dimEls = []; dimKey = '';
+  if (!dimPrefs.on || !spec) return;
+  for (const item of dimensions(spec, P, sel)) {
+    const lines = ['ext', 'ext', 'main'].map(c => { const l = document.createElementNS(NS, 'line'); if (c === 'ext') l.setAttribute('class', 'ext'); else if (item.kind === 'gap') l.setAttribute('class', 'gap'); dimSvg.append(l); return l; });
+    const btn = el('button', item.kind === 'gap' ? 'gap' : '', String(item.value));
+    btn.title = item.edit ? 'Нажмите, чтобы ввести размер' : 'Просвет между полками';
+    if (item.edit) btn.onclick = () => {
+      if (btn.querySelector('input')) return;
+      const inp = Object.assign(el('input'), { type: 'number', value: item.value, step: 1 });
+      let done = false;
+      const finish = ok => { if (done) return; done = true; const v = Math.round(+inp.value); if (ok && inp.value !== '' && Number.isFinite(v) && v !== item.value) applyDim(item.edit, v); else buildDims(); };
+      inp.onkeydown = e => { e.stopPropagation(); if (e.key === 'Enter') finish(true); else if (e.key === 'Escape') finish(false); };
+      inp.onblur = () => finish(true);
+      btn.textContent = ''; btn.append(inp); inp.focus(); inp.select();
+    };
+    dimBox.append(btn); dimEls.push({ item, lines, btn });
+  }
+  placeDims();
+}
+function placeDims() {
+  if (!dimEls.length || !model || !stage._camera) return;
+  const cam = stage._camera, w = stage.clientWidth, h = stage.clientHeight, k = 1 / 1000;
+  const key = cam.matrixWorld.elements.join() + '|' + w + 'x' + h + '|' + model.position.y + '|' + cam.zoom;
+  if (key === dimKey) return;
+  dimKey = key; model.updateMatrixWorld(true); cam.updateMatrixWorld(true);
+  const proj = pt => { const v = new THREE.Vector3(pt[0] * k, pt[1] * k, pt[2] * k); model.localToWorld(v); v.project(cam); return v.z > 1 || v.z < -1 ? null : [((v.x + 1) / 2) * w, ((1 - v.y) / 2) * h]; };
+  for (const { item: it, lines, btn } of dimEls) {
+    const add = (p, o) => [p[0] + o[0], p[1] + o[1], p[2] + o[2]];
+    const A = proj(it.a), B = proj(it.b), A2 = proj(add(it.a, it.off)), B2 = proj(add(it.b, it.off));
+    const len = A2 && B2 ? Math.hypot(A2[0] - B2[0], A2[1] - B2[1]) : 0;
+    const show = A && B && A2 && B2 && len > (it.kind === 'gap' ? 26 : 34);
+    btn.style.display = show ? '' : 'none'; lines.forEach(l => (l.style.display = show ? '' : 'none'));
+    if (!show) continue;
+    const set = (l, p, q) => { l.setAttribute('x1', p[0]); l.setAttribute('y1', p[1]); l.setAttribute('x2', q[0]); l.setAttribute('y2', q[1]); };
+    set(lines[0], A, A2); set(lines[1], B, B2); set(lines[2], A2, B2);
+    btn.style.left = (A2[0] + B2[0]) / 2 + 'px'; btn.style.top = (A2[1] + B2[1]) / 2 + 'px';
+  }
+}
+stage.onFrame = placeDims;
 function highlight() {
   const sc = stage._scene; if (outline) { sc.remove(outline); outline.geometry.dispose(); }
+  partOutline(); buildDims();
   const m = spec.meta, s = m.sections[sel]; if (!s) return;
   const k = 1 / 1000;
   outline = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry((s.w - 6) * k, (m.ih - 6) * k, (m.D + 40) * k)), new THREE.LineBasicMaterial({ color: 0xd4672a, depthTest: false, transparent: true }));
@@ -192,8 +317,18 @@ function control(c, obj, onChange) {
     row.append(wrap);
   } else {
     const r = Object.assign(el('input'), { type: 'range', min: c.min, max: c.max, step: c.step, value: obj[c.k] });
-    const show = () => (out.textContent = c.fmt ? c.fmt(obj[c.k]) : obj[c.k] + (c.u ? ' ' + c.u : ''));
+    const num = !c.fmt && c.u === 'мм' ? Object.assign(el('input', 'num'), { type: 'number', min: c.min, max: c.max, step: 1, value: obj[c.k] }) : null;
+    if (num) out.append(num, ' мм');
+    const show = () => { if (num) num.value = obj[c.k]; else out.textContent = c.fmt ? c.fmt(obj[c.k]) : obj[c.k] + (c.u ? ' ' + c.u : ''); };
     show();
+    if (num) num.onchange = () => {
+      const v = Math.round(+num.value);
+      if (!Number.isFinite(v) || num.value === '') { show(); return; }
+      const nv = clamp(v, c.min, c.max);
+      if (!c.nohist) beginEdit();
+      const old = obj[c.k]; obj[c.k] = nv; r.value = nv; show(); onChange(c, false, old);
+      if (!c.nohist) endEdit();
+    };
     r.oninput = () => { if (!c.nohist) beginEdit(); const old = obj[c.k]; obj[c.k] = +r.value; show(); onChange(c, true, old); };
     r.onchange = () => { onChange(c, false); if (!c.nohist) endEdit(); };
     row.append(r);
@@ -255,12 +390,36 @@ function fittingRows() {
   return rows;
 }
 // ── global settings (ranges and visibility follow the furniture type)
+let widthMsg = '';
+function widthRow() {
+  const row = el('div', 'row'), lab = el('div', 'lab'), name = el('span', '', 'Общая ширина');
+  name.append(tip('Ширина всего изделия по внешним граням. Секции подгоняются пропорционально, пока каждая остаётся в допустимых пределах: так можно вписать шкаф в нишу.'));
+  const out = el('b'), num = Object.assign(el('input', 'num'), { type: 'number', id: 'totalW', step: 1, value: Math.round(totalWidth(P)) });
+  out.append(num, ' мм'); lab.append(name, out); row.append(lab);
+  const note = el('div', 'hintline');
+  const limits = () => { const [lo, hi] = rulesOf(P).secW, n = P.sections.length, t = P.thickness; return [n * lo + (n + 1) * t, n * hi + (n + 1) * t]; };
+  const range = () => { const [a, b] = limits(); note.textContent = `Возможно ${a}–${b} мм при ${P.sections.length} секц.`; };
+  if (widthMsg) note.textContent = widthMsg; else range();
+  num.min = limits()[0]; num.max = limits()[1];
+  num.onchange = () => {
+    const v = Math.round(+num.value);
+    if (!Number.isFinite(v) || num.value === '') { num.value = Math.round(totalWidth(P)); return; }
+    act(() => fitWidth(P, v))();
+    const got = Math.round(totalWidth(P));
+    widthMsg = got === v ? '' : `Запрошено ${v} мм, возможно ${got} мм (пределы секций).`;
+    drawAll(); render(true); widthMsg = '';
+  };
+  row.append(note);
+  return row;
+}
+
 const globalDefs = () => {
   const r = R();
   return [
     ['Корпус', [
       { k: 'fit', l: 'Подстраивать под размеры', tog: 1, hint: 'Включено: при изменении высоты, толщины ЛДСП или основания полки, штанги и ящики пересчитываются вместе с размером. Выключено: всё остаётся на своих высотах (что не помещается — ужимается).' },
       { k: 'fitMode', l: 'Как подстраивать', seg: [['prop', 'Пропорционально'], ['even', 'Равномерно']], when: () => P.fit, hint: 'Пропорционально — каждый элемент сохраняет относительное положение, ящики меняют высоту вместе с изделием. Равномерно — количество полок и ящиков то же, но они заново раскладываются поровну.' },
+      { custom: widthRow },
       { k: 'height', l: 'Высота', min: r.height[0], max: r.height[1], step: 10, u: 'мм', frame: 1, scale: 1, hint: `Полная высота изделия вместе с цоколем или ножками. Для этого типа: ${r.height[0]}–${r.height[1]} мм.` },
       { k: 'depth', l: 'Глубина', min: r.depth[0], max: r.depth[1], step: 10, u: 'мм', frame: 1, hint: `Глубина корпуса без фасадов и ручек. Для этого типа: ${r.depth[0]}–${r.depth[1]} мм. От глубины зависит длина направляющих ящиков.` },
       { k: 'thickness', l: 'Толщина ЛДСП', seg: [[16, '16'], [18, '18'], [22, '22'], [25, '25']], scale: 1, hint: 'Толщина плиты корпуса. Меняет внутренние размеры и пильные размеры всех деталей.' },
@@ -509,7 +668,7 @@ function drawSections() {
     const shelfMode = AF.mode === 'even' || AF.mode === 'step' || AF.mode === 'redist', dMode = AF.mode === 'dEq' || AF.mode === 'dGr';
     if (AF.mode === 'even') card.append(af({ k: 'n', l: 'Количество полок', min: 1, max: 12, step: 1, hint: 'Сколько съёмных полок должно быть в секции.' }));
     if (AF.mode === 'step') card.append(af({ k: 'step', l: 'Шаг между полками (просвет)', min: 150, max: 600, step: 10, u: 'мм', hint: 'Свободная высота между соседними полками.' }));
-    if (dMode) { card.append(af({ k: 'n', l: 'Количество ящиков', min: 1, max: 10, step: 1, hint: 'Сколько ящиков в стопке. Высота ограничена ${MIN_DRAWER_H}–500 мм на ящик.' })); card.append(af({ k: 'zone', l: 'Высота зоны ящиков (снизу)', min: 160, max: H, step: 10, u: 'мм', hint: 'До какой высоты от дна секции тянется стопка ящиков.' })); }
+    if (dMode) { card.append(af({ k: 'n', l: 'Количество ящиков', min: 1, max: 10, step: 1, hint: `Сколько ящиков в стопке. Высота ограничена ${MIN_DRAWER_H}–500 мм на ящик.` })); card.append(af({ k: 'zone', l: 'Высота зоны ящиков (снизу)', min: 160, max: H, step: 10, u: 'мм', hint: 'До какой высоты от дна секции тянется стопка ящиков.' })); }
     if (shelfMode) card.append(af({ k: 's32', l: 'Система 32 (высоты кратны 32 мм)', tog: 1, hint: 'Высоты полок привязываются к шагу 32 мм, чтобы отверстия полкодержателей ложились в общий ряд.' }));
     card.append(af({ k: 'all', l: 'Ко всем секциям', tog: 1, hint: 'Применить к каждой секции изделия, а не только к выбранной.' }));
     const acts2 = el('div', 'acts');
@@ -552,6 +711,7 @@ function drawGlobal() {
   }
   const v = document.getElementById('view'); v.innerHTML = '';
   viewDefs().forEach(c => v.append(control(c, P, () => render(false))));
+  v.append(control({ k: 'on', l: 'Размеры', tog: 1, nohist: 1, hint: 'Габариты, ширины секций и просветы между полками выбранной секции. Нажмите на число, чтобы ввести новый размер.' }, dimPrefs, () => { try { localStorage.setItem('mebel-dims', dimPrefs.on ? '1' : '0'); } catch { /* без сохранения */ } buildDims(); }));
   v.append(asmBox); drawAsmBar();
 }
 
@@ -583,10 +743,12 @@ function shot(maxW) {
   const c = stage._renderer.domElement, k = Math.min(1, maxW / c.width), o = document.createElement('canvas');
   o.width = Math.round(c.width * k); o.height = Math.round(c.height * k);
   if (outline) outline.visible = false;
+  if (partBox) partBox.visible = false;
   stage._renderer.render(stage._scene, stage._camera);
   const g = o.getContext('2d'); g.fillStyle = '#f0eee6'; g.fillRect(0, 0, o.width, o.height);
   g.drawImage(c, 0, 0, o.width, o.height);
   if (outline) outline.visible = true;
+  if (partBox) partBox.visible = true;
   return o;
 }
 const snapshot = () => shot(1000).toDataURL('image/jpeg', 0.82);
@@ -623,8 +785,10 @@ stage.addEventListener('pointerup', e => {
   if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4) return;
   const r = stage.getBoundingClientRect(), ray = new THREE.Raycaster();
   ray.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), stage._camera);
-  const hit = ray.intersectObject(model, true).find(h => h.object.userData.section !== undefined);
-  if (hit) select(hit.object.userData.section);
+  const hit = ray.intersectObject(model, true).find(h => h.object.userData.section !== undefined || h.object.userData.part !== undefined);
+  const pi = hit && hit.object.userData.part;
+  selPartKey = pi !== undefined && spec.parts[pi] ? partIdOf(spec.parts[pi]) : null;
+  if (hit && hit.object.userData.section !== undefined) select(hit.object.userData.section); else highlight();
 });
 
 // ── диалоги
@@ -695,7 +859,7 @@ const PM = {
   async saveas(id = cur) { if (id === cur) save(); const n = await askText('Дублировать проект', uniqueName(db, db[id].name)); if (n) addProject(n, JSON.parse(JSON.stringify(db[id].P))); },
   share(id = cur) { account && account.openShare(id); },
   versions(id = cur) { account && account.openVersions(id); },
-  reset() { snap(); P = makePreset(P.type); sel = 0; drawAll(); render(true); },
+  reset() { snap(); P = makePreset(P.type, keepColors()); sel = 0; drawAll(); render(true); },
   export(id = cur) { if (id === cur) save(); download(projectFile(db, id), fileName(id), 'application/json'); },
   async del(id = cur) {
     const b = el('div', 'dbody'); b.append(el('p', '', `Проект «${db[id].name}» будет удалён без возможности восстановления.`));
@@ -875,7 +1039,6 @@ function openCatalog() {
 
 // ── мобильная панель: три состояния и вкладки
 const panel = document.getElementById('panel'), handle = document.getElementById('handle');
-const SNAPS = { peek: 0, half: 0.5, full: 0.88 };
 const setSnap = k => { panel.dataset.snap = k; panel.style.height = ''; };
 const setTab = k => { panel.dataset.tab = k; document.querySelectorAll('#tabs button').forEach(b => { const on = b.dataset.go === k; b.classList.toggle('on', on); b.setAttribute('aria-selected', on); }); if (panel.dataset.snap === 'peek') setSnap('half'); };
 document.querySelectorAll('#tabs button').forEach(b => (b.onclick = () => setTab(b.dataset.go)));
@@ -893,7 +1056,6 @@ document.querySelectorAll('#tabs button').forEach(b => (b.onclick = () => setTab
   handle.onpointercancel = () => { y0 = null; panel.style.transition = ''; };
   setSnap('half'); setTab('sections');
 }
-void SNAPS;
 
 drawAll();
 render(true);
