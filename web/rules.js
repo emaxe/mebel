@@ -132,8 +132,8 @@ export function normalizeModules(P) {
     delete m.P.modules; delete m.P.modName; delete m.P.modY; delete m.P.countertop; delete m.P.room;
     normalize(m.P);
   }
-  let turned = false;
-  for (const m of P.modules) { if (m.turn && (m.over || turned)) delete m.turn; if (m.turn) turned = true; }
+  let first = '', turns = 0; // не больше двух поворотов в одну сторону: угол (два ряда) или П-образная кухня (три ряда)
+  for (const m of P.modules) { if (m.turn && (m.over || turns >= 2 || (turns === 1 && m.turn !== first))) delete m.turn; if (m.turn) { if (!turns) first = m.turn; turns++; } }
   if (!P.modules.length) delete P.modules;
   if (P.room !== undefined) { const r = normalizeRoom(P.room); if (r) P.room = r; else delete P.room; }
   if (P.countertop !== undefined) { const w = normalizeWorktop(P.countertop); if (w) P.countertop = w; else delete P.countertop; }

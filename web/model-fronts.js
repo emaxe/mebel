@@ -7,6 +7,7 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const nz = v => String(Math.round(v * 10) / 10).replace('.', ',');
 
 import { slideLen, hingeCount } from './hwparams.js';
+import { facadeMass, liftForce, pickLift, HANDLE_MASS } from './norms.js';
 export { hingeCount };
 const slideName = (P, sl) => (P.push ? sl.name.replace(/ с доводчиком$/, '') + ' push-to-open' : sl.name);
 
@@ -141,7 +142,12 @@ export function addFronts(ctx) {
       }
       addHw(kind === 'up' ? 'Петля для откидного фасада (вверх)' : 'Петля для откидного фасада (вниз)', nh);
       addHw('Саморез 3,5×16 (планка петли)', 2 * nh);
-      addHw(kind === 'up' ? 'Газлифт подъёмный 80N' : 'Стабилизатор откидного фасада', 2);
+      if (kind === 'up') {
+        const mass = facadeMass({ w, h, T: fT, style, frameW: hw.mill.frameW }) + (P.handle === 'none' ? 0 : HANDLE_MASS), f = liftForce(mass), n = pickLift(f);
+        p.notes.push(`масса фасада ${mass.toFixed(1)} кг: газлифты 2 × ${n ?? '150+'} Н`);
+        if (n === null) warnings.push(`Секция ${sec}: подъёмный фасад ${mass.toFixed(1)} кг тяжелее, чем держат газлифты 150 Н (нужно ${Math.ceil(f)} Н на каждый): разделите фасад или сделайте дверь`);
+        addHw(`Газлифт подъёмный ${n ?? 150}N`, 2);
+      } else addHw('Стабилизатор откидного фасада', 2);
       addHw('Саморез 4×16 (крепление стабилизатора)', 8);
       // stays on both side walls: from the wall to a bracket on the back of the flap
       const yS = placeHinges([down ? y0 + 0.7 * h : y0 + h - 0.7 * h], y0 + 30, y0 + h - 30, c.blocks, 14, 0).ys[0];

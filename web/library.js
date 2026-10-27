@@ -11,7 +11,7 @@ const sec = (P, o = {}) => Object.assign(P.sections[0], o);
 /** Типовые корпуса: { id, name, hint, type, place: { over?, y? }, make(keep) → P }. */
 export const TEMPLATES = [
   tpl('k-drawers3', 'Нижний: три ящика', 'Тумба 600 мм с тремя ящиками во всю высоту, без двери', 'kbase', P => sec(P, { width: 600, door: 'none', items: fillItems('drawers3', P) })),
-  tpl('k-sink', 'Нижний под мойку', 'Шкаф 800 мм с двумя дверями и пустым объёмом под мойку, без полок', 'kbase', P => sec(P, { width: 800, door: 'double', items: [] })),
+  tpl('k-sink', 'Нижний под мойку', 'Шкаф 800 мм с двумя дверями, без полок, с вырезом в задней стенке под трубы', 'kbase', P => { sec(P, { width: 800, door: 'double', items: [] }); P.cutouts = [{ part: 'Задняя стенка', sec: 0, kind: 'hole', w: 240, h: 200, r: 20, u: 400, v: 450, corner: 'w1d1' }]; }),
   tpl('k-oven', 'Нижний под духовку', 'Шкаф 600 мм: ящик внизу, ниша под духовку сверху, без двери', 'kbase', P => sec(P, { width: 600, door: 'none', items: [{ type: 'drawer', y: 0, h: 180 }] })),
   tpl('k-shelves', 'Нижний с полкой', 'Шкаф 600 мм с дверью и одной полкой', 'kbase', P => sec(P, { width: 600, door: 'left' })),
   tpl('w-door2', 'Верхний: две двери', 'Навесной шкаф 800 мм с двумя дверями и полкой', 'kwall', P => sec(P, { width: 800, door: 'double' }), { over: true, y: 1400 }),

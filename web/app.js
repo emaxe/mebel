@@ -853,6 +853,7 @@ async function editWorktop() {
     body.append(head, el('p', 'hint2', 'Лежит на подряд стоящих нижних модулях (без пенала и разрыва больше 100 мм) и считается по погонным метрам. Размеры вырезов считаются от левого и переднего края первой столешницы.'));
     if (!on) return;
     const row = el('div', 'wtrow'); row.append(lab('Толщина, мм', num(wt, 'T', 16, 60)), lab('Свес спереди, мм', num(wt, 'front', 0, 100)), lab('Свес по бокам, мм', num(wt, 'side', 0, 100))); body.append(row);
+    const row2 = el('div', 'wtrow'); row2.append(lab('Бортик, мм (0 — нет)', num(wt, 'skirtH', 0, 150)), lab('Фартук, мм (0 — нет)', num(wt, 'apron', 0, 1000))); body.append(row2, el('p', 'hint2', 'Бортик из материала столешницы стоит у стены (от 20 мм); фартук — панель ХДФ 4 мм над столешницей до навесных шкафов.'));
     body.append(el('h4', '', 'Вырезы'));
     wt.cutouts.forEach((c, i) => {
       const r = el('div', 'wtcut'); r.append(el('b', '', (CUTOUT_PRESETS[c.kind] || CUTOUT_PRESETS.free).label), lab('Ширина', num(c, 'w', 20, 2000)), lab('Глубина', num(c, 'h', 20, 1000)), lab('От левого края', num(c, 'x', 0, 6000)), lab('От переднего края', num(c, 'y', 0, 1000)), lab('Радиус', num(c, 'r', 0, 100)));
@@ -894,7 +895,7 @@ async function editRoom() {
     body.append(el('h4', '', 'Проёмы'));
     rm.openings.forEach((o, i) => {
       const r = el('div', 'wtcut'), wall = el('select');
-      [['A', 'стена A'], ['B', 'стена B']].forEach(([v, l]) => wall.append(new Option(l, v, false, o.wall === v)));
+      [['A', 'стена A'], ['B', 'стена B'], ['C', 'стена C (напротив A)']].forEach(([v, l]) => wall.append(new Option(l, v, false, o.wall === v)));
       wall.onchange = () => { o.wall = wall.value; draw(); };
       const del = el('button', '', '×'); del.title = 'Убрать проём'; del.onclick = () => { rm.openings.splice(i, 1); draw(); };
       r.append(el('b', '', OPENING_KINDS[o.kind].label), wall, lab('От начала стены', num(o, 'x', 0, 20000)), lab('Ширина', num(o, 'w', 200, 20000)), lab('От пола', num(o, 'y', 0, 4800)), lab('Высота', num(o, 'h', 200, 4800)), del); body.append(r);
@@ -953,9 +954,16 @@ function drawModules() {
   }
   let turnRow = null;
   if (active > 0 && !cur.over) {
-    const taken = list.some(m => m.i !== active && m.turn), sel2 = el('select'), lab = el('label', 'modturn', 'Угол: ');
-    [['', 'Продолжает ряд'], ['R', 'Новый ряд вдоль правой стены'], ['L', 'Новый ряд вдоль левой стены']].forEach(([v, t]) => sel2.append(new Option(t, v, false, cur.turn === v)));
-    sel2.disabled = taken && !cur.turn; lab.title = taken && !cur.turn ? 'Угол уже задан другим модулем: поддерживается один поворот' : 'Начиная с этого модуля ряд идёт вдоль соседней стены под 90°: угловая кухня';
+    const others = list.filter(m => m.i !== active && m.turn), sel2 = el('select'), lab = el('label', 'modturn', 'Угол: ');
+    const sideName = v => (v === 'R' ? 'Новый ряд вдоль правой стены' : 'Новый ряд вдоль левой стены');
+    const opts = [['', 'Продолжает ряд']];
+    if (!others.length) opts.push(['R', sideName('R')], ['L', sideName('L')]);
+    else if (others.length === 1) opts.push([others[0].turn, others[0].i < active ? 'Третий ряд напротив основного (П-образная кухня)' : sideName(others[0].turn)]);
+    else if (cur.turn) opts.push([cur.turn, others[0].i < active ? 'Третий ряд напротив основного (П-образная кухня)' : sideName(cur.turn)]);
+    if (cur.turn && !opts.some(([v]) => v === cur.turn)) opts.push([cur.turn, sideName(cur.turn)]);
+    opts.forEach(([v, t]) => sel2.append(new Option(t, v, false, cur.turn === v)));
+    const full = opts.length === 1 && !cur.turn;
+    sel2.disabled = full; lab.title = full ? 'Повороты уже заданы другими модулями: угол — один поворот, П-образная кухня — два в одну сторону' : 'Начиная с этого модуля ряд идёт вдоль соседней стены под 90° (угловая кухня); второй поворот в ту же сторону даёт третий ряд напротив основного (П-образная кухня)';
     sel2.onchange = () => { act(() => setModuleProps(root, active, { turn: sel2.value }))(); drawModules(); render(true); };
     lab.append(sel2); turnRow = lab;
   }

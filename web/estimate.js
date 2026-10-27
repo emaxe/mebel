@@ -27,8 +27,8 @@ export function estimate(spec, groups, N, E, cat, P = {}) {
     if (!p) missing.push(g.label);
   }
   for (const g of groups) if (g.mat === 'top') {
-    const m = (g.L * g.qty) / 1000, p = cat.special.worktop;
-    sheetLines.push({ name: `${g.label}, глубина ${Math.round(g.W)} мм`, qty: money(m), unit: 'пог. м', price: p || null, sum: money(m * p) });
+    const m = ((g.strip ? Math.max(g.L, g.W) : g.L) * g.qty) / 1000, base = cat.special.worktop, p = g.strip && base ? Math.round((base * Math.min(g.L, g.W)) / 600) : base;
+    sheetLines.push({ name: g.strip ? `${g.label}, высота ${Math.round(Math.min(g.L, g.W))} мм` : `${g.label}, глубина ${Math.round(g.W)} мм`, qty: money(m), unit: 'пог. м', price: p || null, sum: money(m * p) });
     if (!p) missing.push('столешница');
   }
   const mat = sec('Материалы', sheetLines);

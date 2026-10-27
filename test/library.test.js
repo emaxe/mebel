@@ -24,6 +24,11 @@ describe('библиотека корпусов', () => {
     expect(items('k-sink').items).toEqual([]); expect(items('k-sink').door).toBe('double');
     expect(items('w-lift').door).toBe('flapUp');
   });
+  it('шаблон под мойку вырезает отверстие под трубы в задней стенке', () => {
+    const P = instantiate(TEMPLATES.find(t => t.id === 'k-sink'), keep).P, back = buildSpec(P).parts.find(p => p.name === 'Задняя стенка');
+    expect(back.cutouts.length).toBe(1);
+    expect(back.cutouts[0]).toMatchObject({ kind: 'hole' });
+  });
   it('навесные шаблоны встают над предыдущим на 1400 мм', () => {
     const r = instantiate(TEMPLATES.find(t => t.id === 'w-door2'), keep);
     expect(r.over).toBe(true); expect(r.y).toBe(1400);

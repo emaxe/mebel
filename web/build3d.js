@@ -196,9 +196,11 @@ export function buildRoom3D(THREE, fr, room) {
   const floor = add(room.w, room.d, 0xe6e1d7, 1, [((x0 + x1) / 2) * k, -0.002, ((z0 + z1) / 2) * k]); floor.rotation.x = -Math.PI / 2;
   add(room.w, room.h, 0xf3f1ec, 0.35, [((x0 + x1) / 2) * k, (room.h / 2) * k, (z0 - 2) * k]);
   add(room.d, room.h, 0xf3f1ec, 0.35, [(wx + (left ? -2 : 2)) * k, (room.h / 2) * k, ((z0 + z1) / 2) * k], Math.PI / 2);
+  if (fr.hasC) add(room.w, room.h, 0xf3f1ec, 0.2, [((x0 + x1) / 2) * k, (room.h / 2) * k, (z1 + 2) * k]);
   for (const o of room.openings) {
     const col = o.kind === 'door' ? 0xc8a26a : 0x8fc1e6, cy = (o.y + o.h / 2) * k;
     if (o.wall === 'A') add(o.w, o.h, col, 0.8, [fr.xOf(o.x + o.w / 2) * k, cy, (z0 - 1) * k]);
+    else if (o.wall === 'C') add(o.w, o.h, col, 0.8, [fr.xOf(o.x + o.w / 2) * k, cy, (z1 + 1) * k]);
     else add(o.w, o.h, col, 0.8, [(wx + (left ? -1 : 1)) * k, cy, fr.zOf(o.x + o.w / 2) * k], Math.PI / 2);
   }
   if (room.skirt > 0) {
