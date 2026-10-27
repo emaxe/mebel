@@ -2,6 +2,7 @@
 // Данные для обработчиков (скачивание, отметки «куплено») возвращаются наружу; их вешает production.html.
 import { buildSpec } from './model.js';
 import { buildProject } from './project.js';
+import { planView } from './plan.js';
 import { groupParts, nest, edgeSummary, grainOf } from './export.js';
 import { partDrawing } from './partdraw.js';
 import { sheetFor, isTextured } from './catalog.js';
@@ -65,6 +66,8 @@ export function renderProduction({ P, cat, projName, preview = null, shareToken 
   </div></section>`;
 
   html += `<section class="sheet m-task"><h2>Общий вид</h2>${mods.map(m => `${multi ? `<h3>${esc(m.name)}</h3>` : ''}<div class="views">${frontView(m.spec, m.P)}${frontView(m.spec, m.P, { fronts: true })}${sideView(m.spec, m.P)}</div>`).join('')}</section>`;
+
+  if (multi || PJ.worktops.length) html += `<section class="sheet m-task"><h2>План</h2><div class="views">${planView(PJ)}</div></section>`;
 
   // смета
   const nz = v => String(v).replace('.', ',');
