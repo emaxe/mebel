@@ -29,6 +29,7 @@ export const DEFAULT_CATALOG = {
   edge: { 0.4: 12, 1: 25, 2: 40 }, // руб. за пог. м
   hardware: [
     { match: 'Конфирмат', price: 3, art: '' },
+    { match: 'Заглушка', price: 2, art: '' },
     { match: 'Эксцентрик', price: 12, art: '' },
     { match: 'Шкант', price: 1.5, art: '' },
     { match: 'Полкодержатель', price: 2, art: '' },
@@ -48,6 +49,7 @@ export const DEFAULT_CATALOG = {
   // params — параметры присадки и геометрии модели (см. hwparams.js); пусто = значения по умолчанию.
   fittings: [
     { id: 'confirmat', kind: 'confirmat', variant: '', brand: '', name: 'Конфирмат 7×50', art: '', price: 150, pack: 50, stockLen: 0, url: '', params: {} },
+    { id: 'plug', kind: 'plug', variant: '', brand: '', name: 'Заглушка на конфирмат', art: '', price: 100, pack: 50, stockLen: 0, url: '', params: {} },
     { id: 'minifix', kind: 'minifix', variant: '', brand: '', name: 'Эксцентрик (минификс) Ø15 + штифт', art: '', price: 120, pack: 10, stockLen: 0, url: '', params: {} },
     { id: 'dowel', kind: 'dowel', variant: '', brand: '', name: 'Шкант 8×35', art: '', price: 150, pack: 100, stockLen: 0, url: '', params: {} },
     { id: 'pin', kind: 'shelfPin', variant: '', brand: '', name: 'Полкодержатель Ø5', art: '', price: 40, pack: 20, stockLen: 0, url: '', params: {} },
@@ -150,7 +152,8 @@ const matKind = label => (/^ХДФ/.test(label) || /^МДФ/.test(label) ? label
 /** Лист для материала из спецификации («ЛДСП Белый», «МДФ Дуб, рамка», «ХДФ») и толщины. */
 export function sheetFor(cat, label, T) {
   const k = matKind(label);
-  return cat.sheets.find(s => s.mat === k && s.T === T) || cat.sheets.find(s => s.mat === k) || cat.sheets[0];
+  const same = cat.sheets.filter(s => s.mat === k);
+  return same.find(s => s.T === T) || same.slice().sort((a, b) => Math.abs(a.T - T) - Math.abs(b.T - T) || a.T - b.T)[0] || cat.sheets[0];
 }
 /** Текстура (направление волокон) берётся из флага декора, а не из названия. */
 export function isTextured(cat, label) {

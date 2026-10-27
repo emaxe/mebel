@@ -89,7 +89,7 @@ if (shareToken) {
   if (!P) { doc.innerHTML = '<div class="sheet">Нет данных. Откройте <a href="index.html">конструктор</a> и настройте изделие.</div>'; throw 0; }
   cat = loadCatalog(); projName = localStorage.getItem('mebel-v3-name') || 'Проект'; preview = localStorage.getItem('mebel-preview');
 }
-const boughtKey = 'mebel-bought:' + (shareToken || projName);
+const boughtKey = 'mebel-bought:' + (shareToken || localStorage.getItem('mebel-current') || projName);
 let bought = new Set(); try { bought = new Set(JSON.parse(localStorage.getItem(boughtKey) || '[]')); } catch { /* без отметок */ }
 const { html, spec, title, stamp, shop, rub } = renderProduction({ P, cat, projName, preview, shareToken, bought, baseHref: location.href });
 const download = (data, name, type) => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([data], { type })); a.download = name; a.click(); };
@@ -110,7 +110,7 @@ doc.innerHTML = html;
   };
 }
 
-const setMode = m => { document.body.dataset.mode = m; document.querySelectorAll('.bar [data-m]').forEach(b => b.classList.toggle('on', b.dataset.m === m)); history.replaceState(null, '', m === 'task' ? location.pathname : '#' + m); document.title = { task: 'Задание на распил и присадку', kp: 'Коммерческое предложение', labels: 'Этикетки деталей', asm: 'Инструкция по сборке', buy: 'Список покупок' }[m]; };
+const setMode = m => { document.body.dataset.mode = m; document.querySelectorAll('.bar [data-m]').forEach(b => b.classList.toggle('on', b.dataset.m === m)); history.replaceState(null, '', m === 'task' ? location.pathname + location.search : '#' + m); document.title = { task: 'Задание на распил и присадку', kp: 'Коммерческое предложение', labels: 'Этикетки деталей', asm: 'Инструкция по сборке', buy: 'Список покупок' }[m]; };
 document.querySelectorAll('.bar [data-m]').forEach(b => (b.onclick = () => setMode(b.dataset.m)));
 setMode(['kp', 'labels', 'asm', 'buy'].includes(location.hash.slice(1)) ? location.hash.slice(1) : 'task');
 document.getElementById('pr').onclick = () => print();

@@ -3,7 +3,6 @@
 // Extras with nc:true are hardware drawn for realism only (not part of the collision model); kind:'link' is a rod
 // between a fixed point `a` and a point `b` that rides on `group` (hinge arm, stay, gas lift).
 const spread = (len, k, m) => (k === 1 ? [len / 2] : Array.from({ length: k }, (_, i) => m + ((len - 2 * m) * i) / (k - 1)));
-export const _unused = h => (h <= 900 ? 2 : h <= 1600 ? 3 : h <= 2100 ? 4 : 5);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const nz = v => String(Math.round(v * 10) / 10).replace('.', ',');
 
@@ -93,14 +92,14 @@ export function addFronts(ctx) {
     setStage(flap ? 'flaps' : 'doors');
     const pivot = kind === 'left' ? [x0, cy, zf] : kind === 'right' ? [x0 + w, cy, zf] : [cx, kind === 'down' ? y0 : y0 + h, zf];
     const group = { id: `door_${sec}_${k}`, type: 'hinge', axis: flap ? 'x' : 'y', dir: kind === 'left' ? -1 : kind === 'right' ? 1 : kind === 'down' ? 1 : -1, pivot, flap, maxAngle: flap ? 90 : P.hinge === 'wide' ? 165 : 90 };
-    const p = part({ name: flap ? 'Фасад откидной' : 'Фасад двери', mat: 'front', label: frontLabel(style), T: fT, plane: 'xy', L: w, W: h, c: [cx, cy, z], edges: allE, style, sec, group });
+    const p = part({ name: flap ? 'Фасад откидной' : 'Фасад двери', mat: 'front', label: frontLabel(style), T: fT, plane: 'xy', L: w, W: h, c: [cx, cy, z], edges: style === 'shaker' || style === 'glass' ? {} : allE, style, sec, group });
     const mm = hw.mill, win = [w - 2 * mm.frameW, h - 2 * mm.frameW];
     if (style === 'shaker') {
-      p.notes.push(`фрезеровка рамки ${mm.frameW} мм`);
+      p.notes.push(`фрезеровка рамки ${mm.frameW} мм`, 'МДФ: кромка не нужна, торцы красятся или обтягиваются плёнкой');
       p.mill = { kind: 'shaker', face: 'A', frameW: mm.frameW, window: win, depth: mm.recessDepth, cornerR: mm.cornerR };
     }
     if (style === 'glass') {
-      p.notes.push(`фрезеровка под стекло, рамка ${mm.frameW} мм`);
+      p.notes.push(`фрезеровка под стекло, рамка ${mm.frameW} мм`, 'МДФ: кромка не нужна, торцы красятся или обтягиваются плёнкой');
       p.mill = { kind: 'glass', face: 'B', frameW: mm.frameW, window: win, rebate: [win[0] + 2 * mm.glassOverlap, win[1] + 2 * mm.glassOverlap], rebateDepth: mm.rebateDepth, cornerR: mm.cornerR };
       const ge = (mm.glassChamfer ? `, фаска ${mm.glassChamfer}×45°` : '') + (mm.glassCornerR ? `, углы R${mm.glassCornerR}` : '');
       part({ name: 'Стекло фасада', mat: 'glass', label: 'Стекло матовое', T: 4, plane: 'xy', L: w - 2 * (mm.frameW - mm.glassOverlap), W: h - 2 * (mm.frameW - mm.glassOverlap), c: [cx, cy, z - fT / 2 + 4], sec, group, notes: ['вставка в фасад, кромка шлифованная' + ge] });
@@ -189,7 +188,7 @@ export function addFronts(ctx) {
     let shallow = false;
     const bs = c.drawers.filter(behindOf);
     let spL, spR, sp;
-    const zSpB = D / 2 - 25 - fT - 4; // front end of spacers: behind the hinge plates
+    const zSpB = D / 2 - Math.max(25 + fT + 4, ...[hw.hinge, hw.hingeHalf].map(h => h.plateSetback + 12 + 1)); // front end of spacers: behind the hinge plates
     if (bs.length) {
       setStage('drawers');
       // spacers keep the slides clear of the hinge plates behind the door

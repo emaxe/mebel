@@ -18,7 +18,7 @@ describe('параметры моделей', () => {
   it('mergeParams берёт только известные поля, числа и список длин', () => {
     const d = defaultHw({ slide: 'ball' });
     const s = mergeParams(d.slide, { gap: '30', lens: '300, 400,abc,500', rail: 'x', name: 'x', foo: 1, tr: '' }, 'slide');
-    expect(s.gap).toBe(30); expect(s.lens).toEqual([300, 400, 500]); expect(s.rail).toBe('three'); expect(s.name).toBe('шариковые'); expect(s.tr).toBe(0.75);
+    expect(s.gap).toBe(30); expect(s.lens).toEqual([300, 400, 500]); expect(s.rail).toBe('three'); expect(s.name).toBe('шариковые'); expect(s.tr).toBe(d.slide.tr);
   });
   it('петля: центр чашки и отступ планки из модели меняют присадку, ошибок нет', () => {
     const P = makePreset('wardrobe'), hw = resolveHw(withParams('hinge-soft', { cupEdge: 22.5, plateSetback: 45 }), P);

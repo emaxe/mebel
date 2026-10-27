@@ -53,7 +53,8 @@ export function nest(groups, opts = {}) {
     if (!byMat.has(key)) byMat.set(key, { label: g.label, T: g.T, pcs: [] });
     for (let i = 0; i < g.qty; i++) {
       let l = g.saw.L, w = g.saw.W;
-      if (g.plane === 'xy') [l, w] = [w, l]; // волокна вдоль высоты детали
+      const grain = g.grain || (g.plane === 'xy' && g.W >= g.L ? 'W' : 'L'); // фасады стоят волокном по высоте, узкие горизонтальные планки (цоколь, карниз) — по длине
+      if (grain === 'W') [l, w] = [w, l];
       const fixed = !!isTex(g.label);
       if (!fixed && w > l) [l, w] = [w, l];
       byMat.get(key).pcs.push({ no: g.no, l, w, fixed });
@@ -126,6 +127,7 @@ export function toCSV(spec, title) {
   const groups = groupParts(spec);
   const q = v => `"${String(v).replace(/"/g, '""')}"`;
   const e = v => (v ? String(v).replace('.', ',') : '');
+  const c = v => (typeof v === 'number' ? String(v).replace('.', ',') : '');
   const rows = [[title], [], ['№', 'Деталь', 'Секция', 'Материал', 'Толщина', 'Длина', 'Ширина', 'Длина пил.', 'Ширина пил.', 'Кол-во', 'Кромка Д1', 'Кромка Д2', 'Кромка Ш1', 'Кромка Ш2', 'Отверстий', 'Паз', 'Примечание']];
   for (const g of groups) rows.push([g.no, g.name, g.secLabel, g.label, g.T, e(g.L), e(g.W), e(g.saw.L), e(g.saw.W), g.qty, e(g.edges.d1), e(g.edges.d2), e(g.edges.w1), e(g.edges.w2), g.holes.length || '', g.grooves.map(x => `${x.w}×${x.depth} в ${x.at} мм`).join('; '), g.notes.join('; ')]);
   rows.push([], ['', 'Кромка: Д1/Д2 — длинные стороны (вдоль «Длины»), Ш1/Ш2 — короткие. Пильный размер = чистовой − кромка ≥ 1 мм.']);
@@ -134,7 +136,7 @@ export function toCSV(spec, title) {
   rows.push([], ['', 'Фурнитура', '', '', '', '', '', '', '', 'Кол-во']);
   for (const [k, v] of spec.hw) rows.push(['', k, '', '', '', '', '', '', '', v]);
   rows.push([], ['', 'Присадка (отверстия)', 'Деталь №', 'Пласть/торец', 'X, мм', 'Y, мм', 'Ø, мм', 'Глубина', 'Назначение']);
-  for (const g of groups) for (const h of g.holes) rows.push(['', '', g.no, h.f, e(h.u), e(h.v), h.d, h.h, h.note]);
+  for (const g of groups) for (const h of g.holes) rows.push(['', '', g.no, h.f, c(h.u), c(h.v), h.d, h.h, h.note]);
   const mach = groups.flatMap(g => machiningRows(g).map(m => ['', '', g.no, m.title, m.size, m.pos, m.face, m.depth, m.note]));
   if (mach.length) { rows.push([], ['', 'Фрезеровка и вырезы', 'Деталь №', 'Что', 'Размер', 'Положение', 'Пласть', 'Глубина', 'Примечание']); rows.push(...mach); }
   return '\ufeff' + rows.map(rw => rw.map(q).join(';')).join('\r\n');
@@ -172,7 +174,7 @@ export function toDXF(spec) {
     if (ed.d2) line(`KROMKA_${ed.d2}`.replace('.', '_'), x0, y0 + g.W - o, x0 + g.L, y0 + g.W - o);
     if (ed.w1) line(`KROMKA_${ed.w1}`.replace('.', '_'), x0 + o, y0, x0 + o, y0 + g.W);
     if (ed.w2) line(`KROMKA_${ed.w2}`.replace('.', '_'), x0 + g.L - o, y0, x0 + g.L - o, y0 + g.W);
-    for (const gr of g.grooves) for (const dv of [0, gr.w]) line('PAZ_4_5x8_' + gr.f, x0, y0 + gr.at + dv, x0 + g.L, y0 + gr.at + dv);
+    for (const gr of g.grooves) for (const dv of [0, gr.w]) line(`PAZ_${String(gr.w).replace('.', '_')}x${String(gr.depth).replace('.', '_')}_${gr.f}`, x0, y0 + gr.at + dv, x0 + g.L, y0 + gr.at + dv);
     // фрезеровка фасадов и вырезы (слои: FREZA_RAMKA_глубина, OKNO_SKV, FALTS_глубина_B, VYREZ)
     const mi = g.mill;
     if (mi && mi.kind === 'shaker') rrect(`FREZA_RAMKA_${mi.depth}`, x0, y0, mi.frameW, mi.frameW, g.L - mi.frameW, g.W - mi.frameW, [mi.cornerR, mi.cornerR, mi.cornerR, mi.cornerR]);
@@ -206,11 +208,13 @@ export function toDXF(spec) {
   return toCp1251(out.join('\r\n'));
 }
 
+const CP1251_LATIN1 = new Set([0xa0, 0xa4, 0xa6, 0xa7, 0xa9, 0xab, 0xac, 0xad, 0xae, 0xb0, 0xb1, 0xb5, 0xb6, 0xb7, 0xbb]);
+
 function toCp1251(s) {
   const b = new Uint8Array(s.length);
   for (let i = 0; i < s.length; i++) {
     const c = s.charCodeAt(i);
-    b[i] = c < 128 ? c : c >= 0x410 && c <= 0x44f ? c - 0x350 : c === 0x401 ? 0xa8 : c === 0x451 ? 0xb8 : c === 0xd7 ? 0x78 : c === 0x2014 ? 0x97 : c === 0xab ? 0xab : c === 0xbb ? 0xbb : 0x3f;
+    b[i] = c < 128 ? c : c >= 0x410 && c <= 0x44f ? c - 0x350 : c === 0x401 ? 0xa8 : c === 0x451 ? 0xb8 : c === 0xd7 ? 0x78 : c === 0x2014 ? 0x97 : c === 0x2116 ? 0xb9 : CP1251_LATIN1.has(c) ? c : 0x3f;
   }
   return b;
 }

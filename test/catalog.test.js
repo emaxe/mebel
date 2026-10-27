@@ -34,3 +34,14 @@ describe('справочник из ненадёжного источника', 
     expect(sanitizeCatalog(JSON.parse(JSON.stringify(DEFAULT_CATALOG)))).toEqual(DEFAULT_CATALOG);
   });
 });
+
+import { sheetFor as sheetForNearest, DEFAULT_CATALOG as DC } from '../web/catalog.js';
+describe('sheetFor: ближайшая толщина', () => {
+  it('ЛДСП 19 берёт 18, а не первый лист списка', () => {
+    expect(sheetForNearest(DC, 'ЛДСП Белый', 19).T).toBe(18);
+  });
+  it('точная толщина выбирается как есть', () => {
+    expect(sheetForNearest(DC, 'МДФ Дуб, рамка', 19).T).toBe(19);
+    expect(sheetForNearest(DC, 'ЛДСП Белый', 22).T).toBe(22);
+  });
+});
