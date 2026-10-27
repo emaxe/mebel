@@ -61,7 +61,7 @@ describe('вырезы', () => {
   it('DXF, CSV и таблица обработки содержат вырезы', () => {
     const P = withCut(makePreset('wardrobe'), hole(), { part: 'Задняя стенка', kind: 'notch', w: 100, h: 50, r: 6, corner: 'w2d1' }), spec = buildSpec(P);
     const d = dxf(spec);
-    expect(d).toMatch(/VYREZ/); expect(d).toMatch(/\nARC\r?\n/);
+    expect(d).toMatch(/VYREZ/); expect(d).toMatch(/\nPOLYLINE\r?\n/); expect(d).toMatch(/\r?\n42\r?\n-?0\.\d+/);
     expect(toCSV(spec, 'т')).toMatch(/Фрезеровка и вырезы/);
     const rows = machiningRows(groupParts(spec).find(g => g.name === 'Задняя стенка'));
     expect(rows.map(r => r.title)).toEqual(['Вырез', 'Выемка в углу']);

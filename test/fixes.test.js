@@ -207,18 +207,20 @@ describe('E3: DXF — структура файла', () => {
     expect(pairs.every(([code]) => /^\d+$/.test(code))).toBe(true);
     expect(pairs.some(([c, v]) => c === '0' && v === 'EOF')).toBe(true);
     const types = new Set(pairs.filter(([c]) => c === '0').map(([, v]) => v));
-    for (const t of types) expect(['SECTION', 'ENDSEC', 'LINE', 'CIRCLE', 'ARC', 'TEXT', 'EOF']).toContain(t);
+    for (const t of types) expect(['SECTION', 'ENDSEC', 'TABLE', 'ENDTAB', 'LTYPE', 'LAYER', 'LINE', 'CIRCLE', 'POLYLINE', 'VERTEX', 'SEQEND', 'TEXT', 'EOF']).toContain(t);
     const layers = new Set(pairs.filter(([c]) => c === '8').map(([, v]) => v));
     for (const l of layers) expect(l).toMatch(/^[A-Za-z0-9_]+$/); // без пробелов и кириллицы: DXF R12
     for (const want of ['KORPUS', 'FASAD', 'HDF', 'VYREZ', 'OKNO_SKV', 'PODPISI']) expect(layers.has(want), want).toBe(true);
     expect([...layers].some(l => /^FREZA_RAMKA_\d+$/.test(l))).toBe(true);
     expect([...layers].some(l => /^FALTS_\d+_B$/.test(l))).toBe(true);
-    // у каждой дуги радиус и два угла в градусах
-    for (let i = 0; i < pairs.length; i++) if (pairs[i][0] === '0' && pairs[i][1] === 'ARC') {
-      const e = []; for (let j = i + 1; j < pairs.length && pairs[j][0] !== '0'; j++) e.push(pairs[j]);
-      const get = c => e.find(([k]) => k === c);
-      expect(get('40') && +get('40')[1] > 0).toBe(true);
-      expect(get('50') && get('51') && +get('50')[1] >= 0 && +get('51')[1] <= 360).toBe(true);
+    // каждая ломаная замкнута, заканчивается SEQEND, вершины с bulge лежат в пределах четверти окружности
+    let open = 0, polys = 0;
+    for (let i = 0; i < pairs.length; i++) {
+      if (pairs[i][0] === '0' && pairs[i][1] === 'POLYLINE') { open++; polys++; const e = []; for (let j = i + 1; j < pairs.length && !(pairs[j][0] === '0'); j++) e.push(pairs[j]); expect(e.find(([k]) => k === '70')[1]).toBe('1'); }
+      if (pairs[i][0] === '0' && pairs[i][1] === 'SEQEND') open--;
+      if (pairs[i][0] === '42') expect(Math.abs(+pairs[i][1])).toBeLessThanOrEqual(0.4143);
     }
+    expect(open).toBe(0);
+    expect(polys).toBeGreaterThan(5);
   });
 });

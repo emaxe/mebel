@@ -33,11 +33,12 @@
 | `web/check.js` | Проверка собираемости (`checkBuild`) |
 | `web/kinematics.js` | Решатель столкновений, позы подвижных элементов |
 | `web/catalog.js` | Справочники, цены, фурнитура, работы |
+| `web/dxf.js` | DXF R12: контуры деталей, слои, таблица слоёв (`toDXF` в `export.js` — обёртка) |
 | `web/dims.js` | Размерные линии для 3D и просветы полок (без DOM) |
 
 ## Экспорт и форматы
 - **CSV:** `;`, UTF-8 BOM
-- **DXF:** R12, cp1251. Слои: `D{Ø}_H{глуб}_{A|B}`, `_SKV`, `_TORETS`, `KROMKA_*`, `PAZ_*`, `VYREZ`, `FREZA_RAMKA_*`, `OKNO_SKV`, `FALTS_*`
+- **DXF:** R12, cp1251, контур детали — замкнутый POLYLINE (дуги через bulge). Слои: `D{Ø}_H{глуб}_{A|B}`, `_SKV`, `_TORETS`, `KROMKA_*`, `PAZ_*`, `VYREZ`, `FREZA_RAMKA_*`, `OKNO_SKV`, `FALTS_*`
 - **3D:** three.js 0.184, модули через import map в `web/index.html`
 
 ## Тестирование

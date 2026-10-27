@@ -1,5 +1,6 @@
 // Production exports: grouped cut list, saw sizes, sheet nesting, CSV, DXF.
 import { machiningRows } from './partinfo.js';
+import { dxfFromGroups } from './dxf.js';
 export const EDGE_SUB = 1; // edges ≥ 1 mm are subtracted from the saw size
 
 export function sawSize(p) {
@@ -121,8 +122,6 @@ export function nest(groups, opts = {}) {
   return { sheets: out, over };
 }
 
-const holeKey = h => `D${h.d}_${h.h === 'скв.' ? 'SKV' : 'H' + h.h}`;
-
 export function toCSV(spec, title) {
   const groups = groupParts(spec);
   const q = v => `"${String(v).replace(/"/g, '""')}"`;
@@ -142,79 +141,4 @@ export function toCSV(spec, title) {
   return '\ufeff' + rows.map(rw => rw.map(q).join(';')).join('\r\n');
 }
 
-export function toDXF(spec) {
-  const groups = groupParts(spec);
-  const out = ['0', 'SECTION', '2', 'HEADER', '9', '$ACADVER', '1', 'AC1009', '9', '$DWGCODEPAGE', '3', 'ANSI_1251', '9', '$INSUNITS', '70', '4', '0', 'ENDSEC', '0', 'SECTION', '2', 'ENTITIES'];
-  const f = v => +v.toFixed(2);
-  const line = (ly, x1, y1, x2, y2) => out.push('0', 'LINE', '8', ly, '10', f(x1), '20', f(y1), '30', 0, '11', f(x2), '21', f(y2), '31', 0);
-  const circle = (ly, x, y, rr) => out.push('0', 'CIRCLE', '8', ly, '10', f(x), '20', f(y), '30', 0, '40', rr);
-  const arc = (ly, x, y, rr, a0, a1) => out.push('0', 'ARC', '8', ly, '10', f(x), '20', f(y), '30', 0, '40', f(rr), '50', a0, '51', a1);
-  // прямоугольник со скруглением углов rad = [л.н., п.н., п.в., л.в.]; skip — стороны, лежащие на контуре детали (не дублируем рез)
-  const rrect = (ly, x0, y0, u0, v0, u1, v1, rad, skip = []) => {
-    const [a, b, c, d] = rad.map(r => Math.max(0, r));
-    if (!skip.includes('b')) line(ly, x0 + u0 + a, y0 + v0, x0 + u1 - b, y0 + v0);
-    if (!skip.includes('r')) line(ly, x0 + u1, y0 + v0 + b, x0 + u1, y0 + v1 - c);
-    if (!skip.includes('t')) line(ly, x0 + u1 - c, y0 + v1, x0 + u0 + d, y0 + v1);
-    if (!skip.includes('l')) line(ly, x0 + u0, y0 + v1 - d, x0 + u0, y0 + v0 + a);
-    if (a) arc(ly, x0 + u0 + a, y0 + v0 + a, a, 180, 270);
-    if (b) arc(ly, x0 + u1 - b, y0 + v0 + b, b, 270, 360);
-    if (c) arc(ly, x0 + u1 - c, y0 + v1 - c, c, 0, 90);
-    if (d) arc(ly, x0 + u0 + d, y0 + v1 - d, d, 90, 180);
-  };
-  const text = (ly, x, y, h, s) => out.push('0', 'TEXT', '8', ly, '10', f(x), '20', f(y), '30', 0, '40', h, '1', s);
-  const lay = { body: 'KORPUS', front: 'FASAD', back: 'HDF', glass: 'STEKLO', mirror: 'ZERKALO' };
-  const ROW = 7000, GAP = 150;
-  let X = 0, Y = 0, rowH = 0;
-  for (const g of groups) {
-    if (X > 0 && X + g.L > ROW) { X = 0; Y -= rowH + GAP * 1.6; rowH = 0; }
-    const ly = lay[g.mat] || 'DETAL', x0 = X, y0 = Y - g.W;
-    line(ly, x0, y0, x0 + g.L, y0); line(ly, x0 + g.L, y0, x0 + g.L, y0 + g.W); line(ly, x0 + g.L, y0 + g.W, x0, y0 + g.W); line(ly, x0, y0 + g.W, x0, y0);
-    const ed = g.edges, o = 3;
-    if (ed.d1) line(`KROMKA_${ed.d1}`.replace('.', '_'), x0, y0 + o, x0 + g.L, y0 + o);
-    if (ed.d2) line(`KROMKA_${ed.d2}`.replace('.', '_'), x0, y0 + g.W - o, x0 + g.L, y0 + g.W - o);
-    if (ed.w1) line(`KROMKA_${ed.w1}`.replace('.', '_'), x0 + o, y0, x0 + o, y0 + g.W);
-    if (ed.w2) line(`KROMKA_${ed.w2}`.replace('.', '_'), x0 + g.L - o, y0, x0 + g.L - o, y0 + g.W);
-    for (const gr of g.grooves) for (const dv of [0, gr.w]) line(`PAZ_${String(gr.w).replace('.', '_')}x${String(gr.depth).replace('.', '_')}_${gr.f}`, x0, y0 + gr.at + dv, x0 + g.L, y0 + gr.at + dv);
-    // фрезеровка фасадов и вырезы (слои: FREZA_RAMKA_глубина, OKNO_SKV, FALTS_глубина_B, VYREZ)
-    const mi = g.mill;
-    if (mi && mi.kind === 'shaker') rrect(`FREZA_RAMKA_${mi.depth}`, x0, y0, mi.frameW, mi.frameW, g.L - mi.frameW, g.W - mi.frameW, [mi.cornerR, mi.cornerR, mi.cornerR, mi.cornerR]);
-    if (mi && mi.kind === 'glass') {
-      rrect('OKNO_SKV', x0, y0, mi.frameW, mi.frameW, g.L - mi.frameW, g.W - mi.frameW, [mi.cornerR, mi.cornerR, mi.cornerR, mi.cornerR]);
-      const o = (mi.rebate[0] - mi.window[0]) / 2;
-      rrect(`FALTS_${mi.rebateDepth}_B`, x0, y0, mi.frameW - o, mi.frameW - o, g.L - mi.frameW + o, g.W - mi.frameW + o, [mi.cornerR, mi.cornerR, mi.cornerR, mi.cornerR]);
-    }
-    for (const c of g.cutouts || []) {
-      if (c.kind === 'notch') {
-        const inner = { w1d1: 2, w2d1: 3, w2d2: 0, w1d2: 1 }[c.corner], rad = [0, 0, 0, 0]; rad[inner] = c.r;
-        const skip = { w1d1: ['b', 'l'], w2d1: ['b', 'r'], w2d2: ['t', 'r'], w1d2: ['t', 'l'] }[c.corner];
-        rrect('VYREZ', x0, y0, c.u0, c.v0, c.u1, c.v1, rad, skip);
-      } else rrect('VYREZ', x0, y0, c.u0, c.v0, c.u1, c.v1, [c.r, c.r, c.r, c.r]);
-    }
-    for (const h of g.holes) {
-      const x = x0 + h.u, y = y0 + h.v;
-      if (h.f === 'A' || h.f === 'B') circle(`${holeKey(h)}_${h.f}`, x, y, h.d / 2);
-      else {
-        const L2 = `${holeKey(h)}_TORETS`, d = Math.min(h.h, 50);
-        if (h.f === 'w1') line(L2, x, y, x + d, y); if (h.f === 'w2') line(L2, x, y, x - d, y);
-        if (h.f === 'd1') line(L2, x, y, x, y + d); if (h.f === 'd2') line(L2, x, y, x, y - d);
-      }
-    }
-    const th = Math.max(10, Math.min(35, g.W / 7));
-    text('PODPISI', x0, Y + 14, th, `№${g.no} ${g.name} ${g.L}x${g.W}x${g.T} — ${g.qty} шт.`);
-    text('PODPISI', x0, Y + 14 + th * 1.4, th * 0.7, `${g.label}; пил. ${g.saw.L}x${g.saw.W}; секция ${g.secLabel}`);
-    X += g.L + GAP; rowH = Math.max(rowH, g.W + th * 2.6);
-  }
-  out.push('0', 'ENDSEC', '0', 'EOF');
-  return toCp1251(out.join('\r\n'));
-}
-
-const CP1251_LATIN1 = new Set([0xa0, 0xa4, 0xa6, 0xa7, 0xa9, 0xab, 0xac, 0xad, 0xae, 0xb0, 0xb1, 0xb5, 0xb6, 0xb7, 0xbb]);
-
-function toCp1251(s) {
-  const b = new Uint8Array(s.length);
-  for (let i = 0; i < s.length; i++) {
-    const c = s.charCodeAt(i);
-    b[i] = c < 128 ? c : c >= 0x410 && c <= 0x44f ? c - 0x350 : c === 0x401 ? 0xa8 : c === 0x451 ? 0xb8 : c === 0xd7 ? 0x78 : c === 0x2014 ? 0x97 : c === 0x2116 ? 0xb9 : CP1251_LATIN1.has(c) ? c : 0x3f;
-  }
-  return b;
-}
+export const toDXF = (spec, opts) => dxfFromGroups(groupParts(spec), opts);

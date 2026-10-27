@@ -19,7 +19,7 @@ describe('DXF: структура', () => {
       if (+code >= 10 && +code <= 59) expect(val, `${code}`).toMatch(/^-?\d+(\.\d+)?$/);
     }
     expect(open).toBe(false);
-    expect(sections).toBe(2);
+    expect(sections).toBe(3);
     expect(lines.slice(-2)).toEqual(['0', 'EOF']);
     expect(bytes.includes(0x3f)).toBe(bytes.toString('latin1').includes('?'));
   });
