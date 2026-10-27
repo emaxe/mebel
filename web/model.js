@@ -4,6 +4,7 @@
 import { addFronts } from './model-fronts.js';
 import { defaultHw } from './hwparams.js';
 import { buildCorner } from './model-corner.js';
+import { asCell } from './cells.js';
 
 /** Порядок этапов сборки; asm у детали и у extra — ключ этапа. */
 export const STAGES = ['base', 'carcass', 'dividers', 'fixed', 'back', 'top', 'backOverlay', 'cornice', 'shelves', 'rods', 'drawerBox', 'drawers', 'doors', 'flaps', 'handles', 'kupe', 'final'];
@@ -278,6 +279,51 @@ export function buildSpec(P, opts = {}) {
     return null;
   };
 
+  // Зона ячейки: полуперегородка между опорой ячейки и полкой-границей, затем две колонки-ячейки (каждая может делиться дальше).
+  // below и above — опоры ячейки снизу и сверху: { p, ff, e, uv, st? } — деталь, её пласть, торец полуперегородки и координаты узла на опоре.
+  const supBottom = { p: bottom, ff: 'B', e: 'w1', uv: (xh, zz) => [xh - (-W / 2 + t), zz - zC0] };
+  const supTop = { p: top, ff: 'A', e: 'w2', uv: (xh, zz) => [xh - topX0, zz - zC0], st: 'top' };
+  const emitZone = (z, zh, zy0, zoneShelf, c, below, above, blocks) => {
+    const { iw, xL, sec } = c, sp = Math.max(100, Math.min(z.split, iw - t - 100)), xh = xL + sp + t / 2, top_ = z.pos === 'top';
+    stage = 'fixed';
+    const hd = part({ name: 'Полуперегородка', plane: 'yz', L: zh, W: sd, c: [xh, yB + zy0 + zh / 2, shelfBack + sd / 2], edges: { d2: eF }, sec, notes: ['делит зону секции на две колонки'] });
+    const hb = { p: hd, y0: yB + zy0, z0: shelfBack, div: true };
+    const shelfSup = zoneShelf && { p: zoneShelf, ff: top_ ? 'B' : 'A', e: top_ ? 'w1' : 'w2', uv: (x, zz, v) => [x - xL, v] };
+    for (const v of cpos(sd)) {
+      const zz = shelfBack + v;
+      for (const sup of [top_ ? above : below, shelfSup]) {
+        if (!sup) continue;
+        const [u, vv] = sup.uv(xh, zz, v), go = () => conf(sup.p, sup.ff, u, vv, hd, sup.e, v, 'A');
+        if (sup.st) at(sup.st, go); else go();
+      }
+    }
+    const kids = [
+      [z.left, { iw: sp, cx: xL + sp / 2, L: c.L, R: hb, xL, xR: xL + sp, sec, onBounds: mkOnBounds(c.L, hb) }],
+      [z.right, { iw: iw - sp - t, cx: xL + sp + t + (iw - sp - t) / 2, L: hb, R: c.R, xL: xL + sp + t, xR: c.xR, sec, onBounds: mkOnBounds(hb, c.R) }],
+    ];
+    for (const [cell, cc] of kids) colCell(asCell(cell), cc, zy0, zh, top_ ? shelfSup : below, top_ ? above : shelfSup, blocks);
+  };
+  // Колонка зоны: полки (y от низа колонки, base — её низ в координатах секции, h — высота) и вложенная зона.
+  const colCell = (cell, c, base, h, below, above, blocks) => {
+    const { sec } = c;
+    let z = cell.zone, zh = z ? Math.max(0, Math.min(z.h, h - 2 * t)) : 0;
+    if (z && zh < 60) { warnings.push(`Секция ${sec}: зона деления не помещается по высоте`); z = null; zh = 0; }
+    const zy0 = z && z.pos === 'top' ? h - zh : 0;
+    const list = [...(cell.items || [])];
+    if (z) list.push({ type: 'fixed', y: z.pos === 'top' ? zy0 - t : zh, name: 'Полка зоны', zone: true });
+    let top2 = -1, zoneShelf = null;
+    for (const it of list.sort((a, b2) => a.y - b2.y)) {
+      const hh = it.type === 'glass' ? 6 : t, itn = { ...it, y: base + it.y };
+      if (it.y < -0.5 || it.y + hh > h + 0.5) warnings.push(`Секция ${sec}: полка колонки выходит за пределы зоны`);
+      else if (it.y < top2 - 0.5) warnings.push(`Секция ${sec}: полки колонки перекрываются на высоте ${Math.round(it.y)} мм`);
+      top2 = Math.max(top2, it.y + hh);
+      blocks.push([yB + itn.y, yB + itn.y + hh]);
+      const p = emit(itn, c);
+      if (it.zone) zoneShelf = p;
+    }
+    if (z) emitZone(z, zh, base + zy0, zoneShelf, c, below, above, blocks);
+  };
+
   S.forEach((s, i) => {
     const iw = s.width, cx = x0 + iw / 2, sec = i + 1;
     const L = bounds[i], R = bounds[i + 1], onBounds = mkOnBounds(L, R);
@@ -310,37 +356,7 @@ export function buildSpec(P, opts = {}) {
         if (p && ix >= 0 && (it.type === 'shelf' || it.type === 'glass' || it.type === 'fixed')) Object.defineProperty(p, 'item', { value: ix });
       }
     }
-    if (z) {
-      const sp = Math.max(100, Math.min(z.split, iw - t - 100)), xh = xL + sp + t / 2;
-      stage = 'fixed';
-      const hd = part({ name: 'Полуперегородка', plane: 'yz', L: zh, W: sd, c: [xh, yB + zy0 + zh / 2, shelfBack + sd / 2], edges: { d2: eF }, sec, notes: ['делит зону секции на две колонки'] });
-      const hb = { p: hd, y0: yB + zy0, z0: shelfBack, div: true };
-      for (const v of cpos(sd)) {
-        const zz = shelfBack + v, su = xh - (cx - iw / 2);
-        if (z.pos === 'top') {
-          at('top', () => conf(top, 'A', xh - topX0, zz - zC0, hd, 'w2', v, 'A'));
-          if (zoneShelf) conf(zoneShelf, 'B', su, v, hd, 'w1', v, 'A');
-        } else {
-          conf(bottom, 'B', xh - (-W / 2 + t), zz - zC0, hd, 'w1', v, 'A');
-          if (zoneShelf) conf(zoneShelf, 'A', su, v, hd, 'w2', v, 'A');
-        }
-      }
-      const cols = [
-        [z.left, { iw: sp, cx: xL + sp / 2, L, R: hb, xL, xR: xL + sp, sec, onBounds: mkOnBounds(L, hb) }],
-        [z.right, { iw: iw - sp - t, cx: xL + sp + t + (iw - sp - t) / 2, L: hb, R, xL: xL + sp + t, xR, sec, onBounds: mkOnBounds(hb, R) }],
-      ];
-      for (const [list, c] of cols) {
-        let top2 = -1;
-        for (const it of [...(list || [])].sort((a, b2) => a.y - b2.y)) {
-          const hh = it.type === 'glass' ? 6 : t, itn = { ...it, y: zy0 + it.y };
-          if (it.y < -0.5 || it.y + hh > zh + 0.5) warnings.push(`Секция ${sec}: полка колонки выходит за пределы зоны`);
-          else if (it.y < top2 - 0.5) warnings.push(`Секция ${sec}: полки колонки перекрываются на высоте ${Math.round(it.y)} мм`);
-          top2 = Math.max(top2, it.y + hh);
-          blocks.push([yB + itn.y, yB + itn.y + hh]);
-          emit(itn, c);
-        }
-      }
-    }
+    if (z) emitZone(z, zh, zy0, zoneShelf, col, supBottom, supTop, blocks);
     later.forEach(f => f());
     secMeta.push({ x: cx, w: iw, sec: i });
     s._ctx = { iw, cx, L, R, onBounds, drawers, blocks, faceL: xL, faceR: xR, eL: i === 0 ? -W / 2 : L.p.c[0], eR: i === n - 1 ? W / 2 : R.p.c[0] };

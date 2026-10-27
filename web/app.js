@@ -12,7 +12,7 @@ import { normalizeWorktop, WORKTOP_DEFAULT, CUTOUT_PRESETS, worktopRuns } from '
 import { buildProject, moduleList, addModule, duplicateModule, removeModule, moveModule, setModuleProps, cabinetOf, moduleCount } from './project.js';
 import { orientLines, edgeNames, machiningRows } from './partinfo.js';
 import { autoFixAsync, kinProblems } from './autofix.js';
-import { MIN_DRAWER_H, FILL_LABELS, rulesOf, makePreset, normalize, fillItems, innerH, autoShelves, stepShelves, fitWidth, totalWidth, sectionOfMessage, moveItem, autoDrawers, packDrawers, redistribute, fitSections, clamp } from './rules.js';
+import { MIN_DRAWER_H, FILL_LABELS, rulesOf, makePreset, normalize, fillItems, innerH, autoShelves, stepShelves, fitWidth, totalWidth, sectionOfMessage, moveItem, autoDrawers, packDrawers, redistribute, fitSections, clamp, asCell, MAX_CELL_DEPTH } from './rules.js';
 import { loadCatalog, saveCatalog, sanitizeCatalog, sheetFor, isTextured, DEFAULT_CATALOG, CATALOG_KEY, catalogHooks } from './catalog.js';
 import { loadProjects, saveProjects, newId, uniqueName, projectFile, parseProjectFile, hooks, PROJECTS_KEY, CURRENT_KEY, LEGACY_KEY, NAME_KEY } from './projects.js';
 import { putThumb, getThumb, getLocalThumb, delThumb, setRemote } from './thumbs.js';
@@ -551,12 +551,18 @@ function scheme(s, H) {
     else if (isDrawer(it.type)) add('rect', { x: 4, y: Y(it.y, it.h) + 0.5, width: W - 8, height: Math.max(2, it.h * k - 1), fill: it.type === 'idrawer' ? '#efe7d6' : '#d9c4a0', stroke: '#8a6f4c', 'stroke-dasharray': it.type === 'idrawer' ? '3 2' : '' });
     else add('rect', { x: 3, y: Y(it.y, t), width: W - 6, height: Math.max(2, (it.type === 'glass' ? 6 : t) * k), fill: it.type === 'glass' ? '#a9cbd6' : it.type === 'fixed' ? '#6e4b33' : '#9b7b55' });
   }
-  if (s.zone) { // зона деления: полка-граница, полуперегородка и полки колонок
-    const z = s.zone, y0 = z.pos === 'top' ? H - z.h : 0, kx = (W - 6) / s.width, xd = 3 + z.split * kx;
-    add('rect', { x: 3, y: Y(z.pos === 'top' ? y0 - t : z.h, t), width: W - 6, height: Math.max(2, t * k), fill: '#6e4b33' });
+  const k0 = (W - 6) / s.width;
+  const drawZone = (cell, xa0, xb0, base, h) => { // зона деления ячейки: полка-граница, полуперегородка и колонки (рекурсивно)
+    const z = cell.zone; if (!z) return;
+    const y0 = base + (z.pos === 'top' ? h - z.h : 0), kx = k0, xd = xa0 + z.split * kx;
+    add('rect', { x: xa0, y: Y(z.pos === 'top' ? y0 - t : y0 + z.h, t), width: xb0 - xa0, height: Math.max(2, t * k), fill: '#6e4b33' });
     add('rect', { x: xd, y: Y(y0, z.h), width: Math.max(2, t * kx), height: z.h * k, fill: '#8a6f4c' });
-    for (const [list, xa, xb] of [[z.left, 3, xd], [z.right, xd + Math.max(2, t * kx), W - 3]]) for (const it of list) add('rect', { x: xa, y: Y(y0 + it.y, t), width: xb - xa, height: Math.max(2, t * k), fill: it.type === 'glass' ? '#a9cbd6' : '#9b7b55' });
-  }
+    for (const [c, xa, xb] of [[asCell(z.left), xa0, xd], [asCell(z.right), xd + Math.max(2, t * kx), xb0]]) {
+      for (const it of c.items) add('rect', { x: xa, y: Y(y0 + it.y, t), width: xb - xa, height: Math.max(2, t * k), fill: it.type === 'glass' ? '#a9cbd6' : '#9b7b55' });
+      drawZone(c, xa, xb, y0, z.h);
+    }
+  };
+  drawZone(s, 3, W - 3, 0, H);
   if (hinged() && s.door !== 'none') {
     const a = { stroke: '#d4672a', 'stroke-width': 2, fill: 'none' };
     if (s.door === 'left' || s.door === 'double') add('line', { ...a, x1: 1.5, x2: 1.5, y1: 3, y2: Hh - 3 });
@@ -580,23 +586,25 @@ function sectionSummary(s) {
 }
 
 // деление секции по высоте: внизу или вверху зона с полуперегородкой и двумя колонками со своими полками
-function zoneControls(card, s, H) {
+function zoneControls(card, s, H, cell = s, width = s.width, label = '', depth = 0) {
   const t = P.thickness;
+  const room = depth < MAX_CELL_DEPTH && H >= 400 && (!depth || width >= 2 * 100 + t);
+  if (!cell.zone && !room) return;
   const setZone = v => {
-    if (v === 'none') { s.zone = null; return; }
-    if (s.zone) { s.zone.pos = v; return; }
-    s.zone = { pos: v, h: clamp(Math.round((H * 0.3) / 10) * 10, 200, Math.max(200, H - 250)), split: Math.round((s.width - t) / 20) * 10, left: [], right: [] };
+    if (v === 'none') { delete cell.zone; cell.zone = null; return; }
+    if (cell.zone) { cell.zone.pos = v; return; }
+    cell.zone = { pos: v, h: clamp(Math.round((H * 0.3) / 10) * 10, 200, Math.max(200, H - 250)), split: Math.round((width - t) / 20) * 10, left: { items: [] }, right: { items: [] } };
   };
   const chz = (c, live) => { if (!live) drawSections(); render(false); };
-  card.append(control({ k: 'zpos', l: 'Деление по высоте', seg: [['none', 'Нет'], ['bottom', 'Внизу'], ['top', 'Вверху']], hint: 'Зона делится вертикальной полуперегородкой на две колонки со своими полками (обувь, бельё, стопки). Зона отделена от основной части секции стационарной полкой; элементы основной части, попавшие в зону, удаляются.' },
-    { get zpos() { return s.zone ? s.zone.pos : 'none'; }, set zpos(v) { setZone(v); } }, chz));
-  if (!s.zone) return;
-  const z = s.zone;
-  card.append(control({ k: 'h', l: 'Высота зоны', min: 150, max: Math.max(150, H - 250), step: 10, u: 'мм', hint: 'Свободная высота зоны от дна секции (или до крышки) до стационарной полки-границы.' }, z, chz));
-  card.append(control({ k: 'split', l: 'Ширина левой колонки', min: 100, max: Math.max(100, s.width - t - 100), step: 10, u: 'мм', hint: 'Внутренняя ширина левой колонки; правая получается за вычетом толщины полуперегородки.' }, z, chz));
+  card.append(control({ k: 'zpos', l: label + 'Деление по высоте', seg: [['none', 'Нет'], ['bottom', 'Внизу'], ['top', 'Вверху']], hint: 'Зона делится вертикальной полуперегородкой на две колонки со своими полками (обувь, бельё, стопки); колонку можно разделить так же ещё раз. Зона отделена от остальной части стационарной полкой; элементы основной части, попавшие в зону, удаляются.' },
+    { get zpos() { return cell.zone ? cell.zone.pos : 'none'; }, set zpos(v) { setZone(v); } }, chz));
+  if (!cell.zone) return;
+  const z = cell.zone;
+  card.append(control({ k: 'h', l: label + 'Высота зоны', min: 150, max: Math.max(150, H - 250), step: 10, u: 'мм', hint: 'Свободная высота зоны от дна (или до крышки) до стационарной полки-границы.' }, z, chz));
+  card.append(control({ k: 'split', l: label + 'Ширина левой колонки', min: 100, max: Math.max(100, width - t - 100), step: 10, u: 'мм', hint: 'Внутренняя ширина левой колонки; правая получается за вычетом толщины полуперегородки.' }, z, chz));
   for (const [k, title] of [['left', 'Левая колонка'], ['right', 'Правая колонка']]) {
-    const list = z[k], virt = { get items() { return z[k]; }, set items(v) { z[k] = v; } };
-    card.append(el('div', 'sub', `${title}: полок ${list.length}`));
+    const col = z[k] = asCell(z[k]), list = col.items, name = label + title;
+    card.append(el('div', 'sub', `${name}: полок ${list.length}`));
     const rows = el('div', 'items');
     [...list].sort((a, b) => b.y - a.y).forEach(it => {
       const rw = el('div', 'item');
@@ -609,9 +617,10 @@ function zoneControls(card, s, H) {
     });
     card.append(rows);
     const acts = el('div', 'acts');
-    const b1 = el('button', '', '+ Полка'); b1.title = 'Добавить полку и разложить все полки колонки равномерно'; b1.onclick = act(() => { autoShelves(virt, z.h, t, { n: list.length + 1, s32: false }); drawSections(); render(false); });
-    const b2 = el('button', '', 'Равномерно'); b2.disabled = !list.length; b2.title = 'Разложить имеющиеся полки поровну по высоте зоны'; b2.onclick = act(() => { autoShelves(virt, z.h, t, { n: list.length, s32: false }); drawSections(); render(false); });
+    const b1 = el('button', '', '+ Полка'); b1.title = 'Добавить полку и разложить все полки колонки равномерно'; b1.onclick = act(() => { autoShelves(col, z.h, t, { n: list.length + 1, s32: false }); drawSections(); render(false); });
+    const b2 = el('button', '', 'Равномерно'); b2.disabled = !list.length; b2.title = 'Разложить имеющиеся полки поровну по высоте зоны'; b2.onclick = act(() => { autoShelves(col, z.h, t, { n: list.length, s32: false }); drawSections(); render(false); });
     acts.append(b1, b2); card.append(acts);
+    zoneControls(card, null, z.h, col, k === 'left' ? z.split : width - z.split - t, name + ' · ', depth + 1);
   }
 }
 

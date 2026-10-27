@@ -1,5 +1,7 @@
 // Per-type rules (what each kind of furniture supports), presets and section auto-fill. No DOM: testable in node.
 import { presetItems, isDrawer } from './model.js';
+import { asCell, MAX_CELL_DEPTH } from './cells.js';
+export { asCell, zonesOf, MAX_CELL_DEPTH } from './cells.js';
 
 export const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 /** Самый низкий ящик: короб 70 мм + 20 мм от низа фасада (model-fronts.js) должны уместиться в высоту ящика. */
@@ -70,21 +72,23 @@ export const zoneSpan = (z, ih, t, withShelf = false) => {
   const sh = withShelf ? t : 0;
   return z.pos === 'top' ? [ih - z.h - sh, ih] : [0, z.h + sh];
 };
-function normalizeZone(s, R, ih, t) {
+function normalizeZone(s, R, ih, t, width = s.width, depth = 0) {
   const z = s.zone;
-  if (!R.zone || !z || typeof z !== 'object' || ih < 400) { s.zone = null; return; } // зоне нужно хотя бы 150 мм и 250 мм под основную часть секции
+  if (!R.zone || !z || typeof z !== 'object' || ih < 400 || depth > MAX_CELL_DEPTH || (depth && width < 2 * 100 + t)) { s.zone = null; return; } // зоне нужно хотя бы 150 мм и 250 мм под основную часть секции
   if (z.pos !== 'top') z.pos = 'bottom';
   z.h = clamp(Math.round(z.h || 300), 150, Math.max(150, ih - 250));
-  z.split = clamp(Math.round(z.split || (s.width - t) / 2), 100, Math.max(100, s.width - t - 100));
+  z.split = clamp(Math.round(z.split || (width - t) / 2), 100, Math.max(100, width - t - 100));
   for (const k of ['left', 'right']) {
-    z[k] = (z[k] || []).filter(it => ZONE_ITEMS.includes(it.type));
+    const c = z[k] = asCell(z[k]);
+    c.items = (c.items || []).filter(it => ZONE_ITEMS.includes(it.type));
     // съёмные полки: ряд отверстий полкодержателей (−37…+27 мм от полки) должен целиком лежать на колонне зоны
-    for (const it of z[k]) it.y = it.type === 'fixed' ? clamp(it.y, 0, Math.max(0, z.h - t)) : clamp(it.y, 37, Math.max(37, z.h - 27));
+    for (const it of c.items) it.y = it.type === 'fixed' ? clamp(it.y, 0, Math.max(0, z.h - t)) : clamp(it.y, 37, Math.max(37, z.h - 27));
+    normalizeZone(c, R, z.h, t, k === 'left' ? z.split : width - z.split - t, depth + 1);
+    if (!c.zone) delete c.zone;
   }
   const [za, zb] = zoneSpan(z, ih, t);
   s.items = s.items.filter(it => !(it.y >= za - 0.5 && it.y + hOf(it, t) <= zb + 0.5));
 }
-
 /**
  * Вырезы в деталях: { part: имя детали, sec: 0 (все) или номер секции, kind: 'hole' | 'notch', w, h, r, u, v, corner }.
  * hole — прямоугольный вырез со скруглением r, центр в (u, v) от кромок Ш1 и Д1; notch — выемка в углу corner ('w1d1'…'w2d2'), размер w×h, r — радиус внутреннего угла.
@@ -100,8 +104,8 @@ export function normalizeCutouts(list) {
 
 /** Bring a project to what its type supports: ranges, doors, antresol, items, front mode. Idempotent. */
 import { normalizeWorktop } from './worktop.js';
-export const SCHEMA = 2;
-const MIGRATIONS = [P => P, P => P];
+export const SCHEMA = 3;
+const MIGRATIONS = [P => P, P => P, P => P];
 export const MAX_MODULES = 12;
 
 export function schemaOf(P) { return Number.isInteger(P.schema) && P.schema >= 0 ? P.schema : 0; }
@@ -182,7 +186,9 @@ export function normalize(P) {
     }
     normalizeZone(s, R, ih, t);
   }
-  return normalizeModules(P);
+  normalizeModules(P);
+  if ([P, ...(P.modules || []).map(m => m.P)].some(Q => Q.sections.some(s => s.zone))) P.schema = 3; // зоны с колонками-ячейками читают только клиенты схемы 3
+  return P;
 }
 
 // ── auto-fill
@@ -314,11 +320,18 @@ export function fitWidth(P, W) {
   return totalWidth(P);
 }
 
+const scaleZone = (cell, r) => {
+  const z = cell.zone;
+  if (!z) return;
+  z.h = Math.round(z.h * r);
+  for (const k of ['left', 'right']) { const c = z[k] = asCell(z[k]); for (const it of c.items || []) it.y = Math.round(it.y * r); scaleZone(c, r); }
+};
+
 export function fitSections(P, oldIh, newIh, mode = 'prop') {
   if (!oldIh || !newIh || oldIh === newIh) return;
   const r = newIh / oldIh, t = P.thickness;
   for (const s of P.sections) {
-    if (s.zone) { s.zone.h = Math.round(s.zone.h * r); for (const c of [s.zone.left, s.zone.right]) for (const it of c || []) it.y = Math.round(it.y * r); }
+    scaleZone(s, r);
     if (mode === 'even') {
       for (const it of s.items) if (!isDrawer(it.type) && it.type !== 'shelf' && it.type !== 'glass') it.y = Math.round(it.y * r);
       const dr = s.items.filter(it => isDrawer(it.type)).sort((a, b) => a.y - b.y);
