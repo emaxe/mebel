@@ -8,7 +8,7 @@ import { HW_PARAM_DEFS, HW_DEFAULTS } from './hwparams.js';
 import { dimensions } from './dims.js';
 import { orientLines, edgeNames, machiningRows } from './partinfo.js';
 import { autoFixAsync, kinProblems } from './autofix.js';
-import { MIN_DRAWER_H, FILL_LABELS, rulesOf, makePreset, normalize, fillItems, innerH, autoShelves, stepShelves, fitWidth, totalWidth, sectionOfMessage, autoDrawers, packDrawers, redistribute, fitSections, clamp } from './rules.js';
+import { MIN_DRAWER_H, FILL_LABELS, rulesOf, makePreset, normalize, fillItems, innerH, autoShelves, stepShelves, fitWidth, totalWidth, sectionOfMessage, moveItem, autoDrawers, packDrawers, redistribute, fitSections, clamp } from './rules.js';
 import { loadCatalog, saveCatalog, sanitizeCatalog, sheetFor, isTextured, DEFAULT_CATALOG, CATALOG_KEY, catalogHooks } from './catalog.js';
 import { loadProjects, saveProjects, newId, uniqueName, projectFile, parseProjectFile, hooks, PROJECTS_KEY, CURRENT_KEY, LEGACY_KEY, NAME_KEY } from './projects.js';
 import { putThumb, getThumb, getLocalThumb, delThumb, setRemote } from './thumbs.js';
@@ -86,6 +86,16 @@ addEventListener('keydown', e => {
   const free = !t || t === document.body || t.tagName === 'THREE-D-STAGE' || t.tagName === 'CANVAS';
   if (document.getElementById('dlg').open || document.getElementById('projDlg').open) return;
   if (e.key === 'Escape' && selPartKey && !typing) { selPartKey = null; highlight(); return; }
+  if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && selPartKey && !typing && !mod) {
+    const p = spec.parts.find(x => partIdOf(x) === selPartKey);
+    if (p && p.item !== undefined) {
+      e.preventDefault();
+      const sc = P.sections[p.sec - 1], it = sc.items[p.item], dir = e.key === 'ArrowUp' ? 1 : -1;
+      const nv = moveItem(sc, p.item, it.y + dir * (e.shiftKey ? 1 : 32), { ...shelfOpts(e.shiftKey), step: e.shiftKey ? 0 : 32 });
+      if (nv !== it.y) { act(() => { it.y = nv; })(); drawSections(); render(false); }
+      return;
+    }
+  }
   const redraw = () => { drawSections(); render(true); };
   const insert = json => { if (P.sections.length >= R().maxSec) return false; act(() => { P.sections.splice(sel + 1, 0, JSON.parse(json)); sel++; })(); redraw(); return true; };
   if (!mod && free && (e.key === 'Delete' || e.key === 'Backspace') && P.sections.length > 1) { e.preventDefault(); act(() => { P.sections.splice(sel, 1); sel = Math.max(0, sel - 1); })(); redraw(); }
@@ -185,7 +195,7 @@ function render(frame) {
   document.querySelectorAll('[data-when]').forEach(e => (e.style.display = e._when() ? '' : 'none'));
   highlight();
 }
-const partIdOf = p => `${p.name}|${p.sec}|${p.c.map(v => Math.round(v)).join(',')}`;
+const partIdOf = p => (p.item !== undefined ? `item|${p.sec}|${p.item}` : `${p.name}|${p.sec}|${p.c.map(v => Math.round(v)).join(',')}`);
 const partCard = document.getElementById('partcard');
 function hidePartCard() { partCard.hidden = true; partCard.textContent = ''; }
 function showPartCard(p) {
@@ -208,6 +218,7 @@ function showPartCard(p) {
   const mach = machiningRows(p).map(m => m.title);
   row('Фрезеровка', mach.join('; '));
   for (const t of p.notes || []) row('', t);
+  if (p.item !== undefined) row('', 'Перетащите вверх или вниз, либо стрелками ↑ ↓ (Shift — по 1 мм, Alt — без привязки к 32)');
   partCard.hidden = false;
 }
 function partOutline() {
@@ -779,13 +790,52 @@ const EXPORTS = {
 };
 document.querySelectorAll('[data-x]').forEach(b => (b.onclick = () => { closeMenus(); EXPORTS[b.dataset.x](); }));
 
+const rayAt = e => {
+  const r = stage.getBoundingClientRect(), ray = new THREE.Raycaster();
+  ray.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), stage._camera);
+  return ray;
+};
+const pickAt = e => rayAt(e).intersectObject(model, true).find(h => h.object.userData.section !== undefined || h.object.userData.part !== undefined);
+const frontY = e => {
+  const m = spec.meta, k = 1 / 1000;
+  model.updateMatrixWorld(true);
+  const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -model.localToWorld(new THREE.Vector3(0, 0, (m.D / 2) * k)).z);
+  const pt = rayAt(e).ray.intersectPlane(plane, new THREE.Vector3());
+  return pt ? model.worldToLocal(pt).y / k : null;
+};
+let drag = null;
+const dragItem = d => P.sections[d.sec].items[d.i];
+const shelfOpts = alt => ({ t: P.thickness, ih: spec.meta.ih, step: alt ? 0 : 32 });
+stage.addEventListener('pointerdown', e => {
+  if (e.button !== 0 || !selPartKey) return;
+  const hit = pickAt(e), p = hit && hit.object.userData.part !== undefined ? spec.parts[hit.object.userData.part] : null;
+  if (!p || p.item === undefined || partIdOf(p) !== selPartKey) return;
+  const y0 = frontY(e);
+  if (y0 === null) return;
+  drag = { sec: p.sec - 1, i: p.item, y0, base: dragItem({ sec: p.sec - 1, i: p.item }).y, moved: false };
+  stage._controls.enabled = false; beginEdit();
+}, true);
+addEventListener('pointermove', e => {
+  if (!drag) return;
+  const y = frontY(e); if (y === null) return;
+  const it = dragItem(drag), nv = moveItem(P.sections[drag.sec], drag.i, drag.base + (y - drag.y0), shelfOpts(e.altKey));
+  if (nv === it.y) return;
+  it.y = nv; drag.moved = true; render(false);
+});
+const endDrag = () => {
+  if (!drag) return;
+  stage._controls.enabled = true; endEdit();
+  if (drag.moved) drawSections();
+  drag = null;
+};
+addEventListener('pointerup', endDrag);
+addEventListener('pointercancel', endDrag);
+
 let down;
 stage.addEventListener('pointerdown', e => (down = [e.clientX, e.clientY]));
 stage.addEventListener('pointerup', e => {
   if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4) return;
-  const r = stage.getBoundingClientRect(), ray = new THREE.Raycaster();
-  ray.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), stage._camera);
-  const hit = ray.intersectObject(model, true).find(h => h.object.userData.section !== undefined || h.object.userData.part !== undefined);
+  const hit = pickAt(e);
   const pi = hit && hit.object.userData.part;
   selPartKey = pi !== undefined && spec.parts[pi] ? partIdOf(spec.parts[pi]) : null;
   if (hit && hit.object.userData.section !== undefined) select(hit.object.userData.section); else highlight();

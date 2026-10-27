@@ -231,6 +231,22 @@ export function sectionOfMessage(text, n) {
   return i >= 0 && i < n ? i : null;
 }
 
+export const itemHeight = (it, t) => (isDrawer(it.type) ? it.h : it.type === 'glass' ? 6 : it.type === 'rod' ? 0 : t);
+
+export function moveItem(sec, i, y, { t, ih, step = 32, gap = 20 }) {
+  const it = sec.items[i], hh = itemHeight(it, t);
+  let lo = 0, hi = ih - hh;
+  sec.items.forEach((o, j) => {
+    if (j === i || o.type === 'rod') return;
+    const g = isDrawer(it.type) || isDrawer(o.type) ? 0 : gap;
+    if (o.y < it.y) lo = Math.max(lo, o.y + itemHeight(o, t) + g);
+    else hi = Math.min(hi, o.y - hh - g);
+  });
+  if (lo > hi) return it.y;
+  const v = step ? Math.round(y / step) * step : Math.round(y);
+  return clamp(v, lo, hi);
+}
+
 export const totalWidth = P => P.sections.reduce((a, s) => a + s.width, 0) + (P.sections.length + 1) * P.thickness;
 
 export function fitWidth(P, W) {

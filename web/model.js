@@ -277,7 +277,11 @@ export function buildSpec(P, opts = {}) {
       if (it.type !== 'rod') prevTop = Math.max(prevTop, it.y + hh);
       if (it.type === 'shelf' || it.type === 'glass' || it.type === 'fixed') blocks.push([ya, ya + hh]);
       if (isDrawer(it.type)) drawers.push({ ...it, ya });
-      else { const p = emit(it, col); if (it.zone) zoneShelf = p; }
+      else {
+        const p = emit(it, col), ix = (s.items || []).indexOf(it);
+        if (it.zone) zoneShelf = p;
+        if (p && ix >= 0 && (it.type === 'shelf' || it.type === 'glass' || it.type === 'fixed')) Object.defineProperty(p, 'item', { value: ix });
+      }
     }
     if (z) {
       const sp = Math.max(100, Math.min(z.split, iw - t - 100)), xh = xL + sp + t / 2;

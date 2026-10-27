@@ -33,6 +33,7 @@
 | `web/check.js` | Проверка собираемости (`checkBuild`) |
 | `web/kinematics.js` | Решатель столкновений, позы подвижных элементов |
 | `web/catalog.js` | Справочники, цены, фурнитура, работы |
+| `web/dims.js` | Размерные линии для 3D и просветы полок (без DOM) |
 
 ## Экспорт и форматы
 - **CSV:** `;`, UTF-8 BOM
@@ -40,7 +41,7 @@
 - **3D:** three.js 0.184, модули через import map в `web/index.html`
 
 ## Тестирование
-- `./run.sh test` — тесты ядра (Vitest)
+- `./run.sh test` — тесты ядра (Vitest); при диагностике через прокси RTK запускай `rtk proxy npx vitest run`
 - `./run.sh servertest` — тесты сервера с временным Postgres
 - `./run.sh full` — полная проверка
 
@@ -51,6 +52,10 @@
 - Local-first: всё работает из localStorage
 - Синхронизация через `web/sync.js`, конфликты разрешаются по версии
 - Просмотр по ссылке: `view.html`, `production.html?share=...`
+
+## Релиз и кеш
+- Сервис-воркер работает cache-first: при изменении файлов в `web/` увеличивай версию командой `./run.sh bump`; новые модули добавляй в список `ASSETS` (тест `test/service-worker.test.js` проверяет состав).
+- В проекте есть `P.schema` и `migrate()` в `web/rules.js`: при несовместимом изменении формата проекта поднимай `SCHEMA` и добавляй функцию в `MIGRATIONS`.
 
 ## Разработка
 - Локальный клиент: `./run.sh serve` или `npx serve .` из корня (нужен HTTP-сервер для ES-модулей)
