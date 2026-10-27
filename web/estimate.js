@@ -14,7 +14,7 @@ export function estimate(spec, groups, N, E, cat, P = {}) {
 
   // листовые материалы: число листов из раскроя × цена листа (+ доплата за декор)
   const sheetLines = [], seen = new Map();
-  for (const s of N.sheets) seen.set(s.mat, (seen.get(s.mat) || 0) + 1);
+  for (const s of N.sheets) if (!s.stock) seen.set(s.mat, (seen.get(s.mat) || 0) + 1);
   for (const [mat, n] of seen) {
     const [label, tPart] = mat.split(/, (?=\d+ мм$)/), T = parseInt(tPart, 10);
     const sh = sheetFor(cat, label, T), extra = (cat.decors.find(d => label.includes(d.name)) || {}).price || 0, price = sh.price + extra;

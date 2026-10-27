@@ -119,7 +119,7 @@ const hasMoving = () => hasDoors() || hasDrawers();
 
 // ── kinematic warnings: what stops when everything is opened (cached until the construction changes)
 // раскрой нужен панели, чтобы сказать «деталь не помещается на лист» (листы и обрезка — из справочника)
-const nestFor = spec => nest(groupParts(spec), { sheetFor: (l, T) => sheetFor(cat, l, T), textured: l => isTextured(cat, l), kerf: cat.cut.kerf, trim: cat.cut.trim, minOffcut: cat.cut.minOffcut });
+const nestFor = spec => nest(groupParts(spec), { sheetFor: (l, T) => sheetFor(cat, l, T), textured: l => isTextured(cat, l), kerf: cat.cut.kerf, trim: cat.cut.trim, minOffcut: cat.cut.minOffcut, stock: cat.stock });
 let kinKey = '', kinWarn = [], buildIssues = [], fixNote = null;
 /** Одинаковые строки сворачиваются в одну с числом повторов: «… (×3)». */
 const dedupe = list => { const m = new Map(); for (const t of list) m.set(t, (m.get(t) || 0) + 1); return [...m].map(([t, n]) => (n > 1 ? `${t} (×${n})` : t)); };
@@ -1080,6 +1080,7 @@ function openCatalog() {
       paramsBlock(),
       fields('Фрезеровка фасадов и кромка стекла', 'Рамка рамочных фасадов и фасадов под стекло, четверть под стекло, фаска и углы стекла. Идут в чертёж детали, примечания и DXF.', HW_PARAM_DEFS.mill.map(([k, l]) => [l, c.milling, k])),
       fields('Работы и наценка', '', [['Распил, за метр реза', c.works, 'cut'], ['Кромкование, за пог. м', c.works, 'edge'], ['Присадка, за отверстие', c.works, 'hole'], ['Сборка, % от материалов и фурнитуры', c.works, 'assembly'], ['Стекло, за м²', c.special, 'glass'], ['Зеркало, за м²', c.special, 'mirror'], ['Наценка, %', c, 'markup']]),
+      grid('Складские остатки', 'Обрезки листов, которые уже есть в наличии. Раскрой кладёт детали на них первыми, в смету они не входят, обрезка у них не снимается. Материал выбирается из списка декоров, толщина должна совпадать с деталью.', c.stock, [['label', 'Материал', 'select', '150px', [...c.decors.map(d => `ЛДСП ${d.name}`), 'ХДФ']], ['T', 'Толщ.', 'number', '60px'], ['L', 'Длина', 'number', '1fr'], ['W', 'Ширина', 'number', '1fr'], ['qty', 'Шт.', 'number', '56px']], { label: `ЛДСП ${(c.decors[0] || { name: 'Белый' }).name}`, T: 18, L: 800, W: 600, qty: 1 }),
       fields('Раскрой', 'Пропил — ширина реза пилы; обпил — полоса, срезаемая по краю листа; остаток считается деловым от указанных размеров.', [['Пропил, мм', c.cut, 'kerf'], ['Обпил по краю, мм', c.cut, 'trim'], ['Деловой остаток: длиннее, мм', c.cut.minOffcut, 0], ['Деловой остаток: шире, мм', c.cut.minOffcut, 1]]),
     );
   };

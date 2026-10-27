@@ -92,6 +92,7 @@ export const DEFAULT_CATALOG = {
   markup: 30, // %
   currency: '₽',
   cut: { kerf: 4, trim: 10, minOffcut: [300, 100] },
+  stock: [], // складские остатки: { label: «ЛДСП Белый», T, L, W, qty } — закрываются первыми, в смету не входят
 };
 
 const clone = o => JSON.parse(JSON.stringify(o));
@@ -117,6 +118,9 @@ export function sanitizeCatalog(c) {
   for (const k of ['edge', 'works', 'special', 'cut', 'milling']) if (!isObj(out[k])) out[k] = clone(DEFAULT_CATALOG[k]);
   if (!Array.isArray(out.cut.minOffcut) || out.cut.minOffcut.length < 2) out.cut.minOffcut = [...DEFAULT_CATALOG.cut.minOffcut];
   const num = (o, k, d) => { if (!Number.isFinite(+o[k]) || o[k] === '' || o[k] === null) o[k] = d; else o[k] = +o[k]; };
+  if (!Array.isArray(out.stock)) out.stock = [];
+  out.stock = out.stock.filter(isObj);
+  for (const s of out.stock) { if (typeof s.label !== 'string') s.label = 'ЛДСП Белый'; num(s, 'T', 18); num(s, 'L', 800); num(s, 'W', 600); num(s, 'qty', 1); s.qty = Math.max(0, Math.floor(s.qty)); }
   for (const s of out.sheets) { num(s, 'T', 18); num(s, 'L', 2800); num(s, 'W', 2070); num(s, 'price', 0); if (typeof s.mat !== 'string') s.mat = 'ЛДСП'; }
   for (const d of out.decors) { if (typeof d.name !== 'string') d.name = 'Декор'; if (typeof d.color !== 'string' || !/^#[0-9a-f]{3,8}$/i.test(d.color)) d.color = '#cccccc'; num(d, 'price', 0); }
   for (const h of out.hardware) { if (typeof h.match !== 'string') h.match = ''; num(h, 'price', 0); }

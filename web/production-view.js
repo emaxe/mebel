@@ -25,7 +25,7 @@ export const shopUnit = l => (l.unit === 'уп.' ? `${l.packs} уп. × ${l.pack
  */
 export function renderProduction({ P, cat, projName, preview = null, shareToken = '', bought = new Set(), baseHref = 'http://localhost/', date = new Date() }) {
   const HW = resolveHw(cat, P), spec = buildSpec(P, { hw: HW }), G = groupParts(spec), E = edgeSummary(G);
-  const N = nest(G, { sheetFor: (l, T) => sheetFor(cat, l, T), textured: l => isTextured(cat, l), kerf: cat.cut.kerf, trim: cat.cut.trim, minOffcut: cat.cut.minOffcut });
+  const N = nest(G, { sheetFor: (l, T) => sheetFor(cat, l, T), textured: l => isTextured(cat, l), kerf: cat.cut.kerf, trim: cat.cut.trim, minOffcut: cat.cut.minOffcut, stock: cat.stock });
   const EST = estimate(spec, G, N, E, cat, P);
   const CHK = checkBuild(spec, P, { N, hw: HW }), SHOP = shoppingList(spec, cat, P), STEPS = assemblySteps(spec, G, P);
   const cur = cat.currency || '₽', rub = v => v.toLocaleString('ru-RU', { maximumFractionDigits: 0 }) + ' ' + cur;
@@ -38,7 +38,8 @@ export function renderProduction({ P, cat, projName, preview = null, shareToken 
   // materials summary
   const mats = new Map();
   for (const g of G) { const k = `${g.label}|${g.T}`; const m = mats.get(k) || { label: g.label, T: g.T, area: 0, n: 0 }; m.area += g.L * g.W * g.qty / 1e6; m.n += g.qty; mats.set(k, m); }
-  const sheetsBy = {}; N.sheets.forEach(s => { sheetsBy[s.mat] = s.of; });
+  const sheetsBy = {}, stockBy = {}; N.sheets.forEach(s => { if (s.stock) stockBy[s.mat] = (stockBy[s.mat] || 0) + 1; else sheetsBy[s.mat] = (sheetsBy[s.mat] || 0) + 1; });
+  const sheetsTxt = key => `${sheetsBy[key] ?? (stockBy[key] ? 0 : '—')}${stockBy[key] ? ` + ${stockBy[key]} ост.` : ''}`;
 
   let html = `<div class="bar"><button data-m="task">Задание</button><button data-m="kp">КП для клиента</button><button data-m="labels">Этикетки</button><button data-m="asm">Сборка</button><button data-m="buy">Покупки</button><button class="pri" id="pr">Печать / PDF</button><button id="csv">CSV / Excel</button><button id="dxf">DXF</button><a href="index.html">← В конструктор</a></div>`;
   {
@@ -126,7 +127,7 @@ export function renderProduction({ P, cat, projName, preview = null, shareToken 
   }
 
   html += `<section class="sheet m-task"><h2>Сводка материалов</h2><div class="grid2"><div><table><tr><th>Материал</th><th class="n">мм</th><th class="n">м²</th><th class="n">Листов</th></tr>
-  ${[...mats.values()].map(m => `<tr><td>${esc(m.label)}</td><td class="n">${m.T}</td><td class="n">${fmt(m.area.toFixed(2))}</td><td class="n">${sheetsBy[`${m.label}, ${m.T} мм`] ?? '—'}</td></tr>`).join('')}
+  ${[...mats.values()].map(m => `<tr><td>${esc(m.label)}</td><td class="n">${m.T}</td><td class="n">${fmt(m.area.toFixed(2))}</td><td class="n">${sheetsTxt(`${m.label}, ${m.T} мм`)}</td></tr>`).join('')}
   </table><p class="muted">${[...new Set(N.sheets.map(s => `${s.L}×${s.W}`))].join(', ') || '—'} мм, обрезка ${cat.cut.trim} мм, пропил ${cat.cut.kerf} мм. Раскрой гильотинный.</p>
   <table><tr><th>Кромка ПВХ</th><th class="n">пог. м</th><th class="n">+10%</th></tr>${E.map(e => `<tr><td>${fmt(e.t)} мм</td><td class="n">${fmt(e.m.toFixed(1))}</td><td class="n">${fmt((e.m * 1.1).toFixed(1))}</td></tr>`).join('')}</table></div>
   <div><table><tr><th>Фурнитура</th><th class="n">шт.</th></tr>${spec.hw.map(([k, v]) => `<tr><td>${esc(k)}</td><td class="n">${v}</td></tr>`).join('')}</table></div></div></section>`;
@@ -140,14 +141,17 @@ export function renderProduction({ P, cat, projName, preview = null, shareToken 
   html += `<section class="sheet m-task"><h2>Карты раскроя</h2>${N.over.length ? `<div class="warn">Не помещаются на лист: ${N.over.map(o => '№' + o.no).join(', ')}</div>` : ''}<div class="grid2">`;
   for (const s of N.sheets) {
     const k = 1;
-    html += `<div><div style="display:flex;justify-content:space-between;margin-bottom:6px"><b>${esc(s.mat)}</b><span class="muted">лист ${s.idx}/${s.of} · ${s.L}×${s.W} · ${Math.round(s.use * 100)}% · рез ${fmt((s.cutLen / 1000).toFixed(1))} м</span></div>
+    html += `<div><div style="display:flex;justify-content:space-between;margin-bottom:6px"><b>${esc(s.mat)}</b><span class="muted">${s.stock ? 'остаток' : 'лист'} ${s.idx}/${s.of} · ${s.L}×${s.W} · ${Math.round(s.use * 100)}% · рез ${fmt((s.cutLen / 1000).toFixed(1))} м</span></div>
     <svg viewBox="-20 -20 ${s.L + 40} ${s.W + 40}" style="width:100%;background:#faf9f6;border:1px solid #e6e2da">
     <rect x="0" y="0" width="${s.L}" height="${s.W}" fill="#efe9dd" stroke="#8a8478" stroke-width="4"/>
     ${s.offcuts.map(o => `<rect x="${o.x + s.trim}" y="${o.y + s.trim}" width="${o.l}" height="${o.w}" fill="#e8f1e4" stroke="#7fa06f" stroke-width="3" stroke-dasharray="14 8"/>${Math.min(o.l, o.w) > 150 ? `<text x="${o.x + s.trim + o.l / 2}" y="${o.y + s.trim + o.w / 2}" font-size="38" text-anchor="middle" dominant-baseline="middle" fill="#4f7a40">остаток ${Math.round(o.l)}×${Math.round(o.w)}</text>` : ''}`).join('')}
+    ${s.cuts.map(c => c.dir === 'H'
+      ? `<line x1="${s.trim + c.from}" y1="${s.trim + c.pos}" x2="${s.trim + c.to}" y2="${s.trim + c.pos}" stroke="#c0392b" stroke-width="3" stroke-dasharray="20 10"/><text x="${s.trim + c.from + 24}" y="${s.trim + c.pos - 8}" font-size="34" fill="#c0392b">${c.n}</text>`
+      : `<line x1="${s.trim + c.pos}" y1="${s.trim + c.from}" x2="${s.trim + c.pos}" y2="${s.trim + c.to}" stroke="#c0392b" stroke-width="3" stroke-dasharray="20 10"/><text x="${s.trim + c.pos + 8}" y="${s.trim + c.from + 40}" font-size="34" fill="#c0392b">${c.n}</text>`).join('')}
     ${s.pieces.map(p => { const x = p.x + s.trim, y = p.y + s.trim, fs = Math.max(26, Math.min(70, Math.min(p.l, p.w) / 4));
       return `<rect x="${x}" y="${y}" width="${p.l}" height="${p.w}" fill="#fff" stroke="#1f1e1b" stroke-width="3"/>
       ${Math.min(p.l, p.w) > 60 ? `<text x="${x + p.l / 2}" y="${y + p.w / 2}" font-size="${fs}" text-anchor="middle" dominant-baseline="middle" fill="#1f1e1b">${p.no}${p.l > 380 && p.w > 160 ? `<tspan x="${x + p.l / 2}" dy="${fs * 1.1}" font-size="${fs * 0.7}" fill="#6f6a60">${Math.round(p.l)}×${Math.round(p.w)}</tspan>` : ''}</text>` : ''}`; }).join('')}
-    </svg></div>`;
+    </svg>${s.cuts.length ? `<details class="cuts"><summary>Порядок резов (${s.cuts.length})</summary><ol>${s.cuts.map(c => `<li>${c.dir === 'H' ? 'Горизонтальный' : 'Вертикальный'} рез на ${fmt(Math.round(c.pos * 10) / 10)} мм ${c.dir === 'H' ? 'от верхнего края' : 'от левого края'} (от ${fmt(Math.round(c.from * 10) / 10)} до ${fmt(Math.round(c.to * 10) / 10)} мм, длина ${fmt(Math.round(c.len))} мм)</li>`).join('')}</ol><p class="muted">Размеры отсчитываются от края листа после обрезки${s.trim ? ` ${s.trim} мм` : ''}; каждый следующий рез идёт по куску, оставшемуся после предыдущих.</p></details>` : ''}</div>`;
   }
   html += `</div></section>`;
 
