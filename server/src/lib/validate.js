@@ -26,6 +26,10 @@ export const catalogBody = z.object({ data: z.object({}).passthrough(), baseVers
 /** Возвращает текст ошибки или null. */
 export function checkProject(P) {
   if (JSON.stringify(P).length > MAX_PROJECT_BYTES) return 'Проект слишком большой';
-  try { buildSpec(normalize(structuredClone(P))); } catch { return 'Параметры проекта не проходят расчёт'; }
+  try {
+    const Q = normalize(structuredClone(P));
+    buildSpec(Q);
+    for (const m of Q.modules || []) buildSpec(m.P);
+  } catch { return 'Параметры проекта не проходят расчёт'; }
   return null;
 }

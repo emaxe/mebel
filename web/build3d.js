@@ -160,3 +160,17 @@ export function build3D(THREE, spec, P, opts = {}) {
 
 const TR = { а:'a',б:'b',в:'v',г:'g',д:'d',е:'e',ё:'e',ж:'zh',з:'z',и:'i',й:'i',к:'k',л:'l',м:'m',н:'n',о:'o',п:'p',р:'r',с:'s',т:'t',у:'u',ф:'f',х:'h',ц:'ts',ч:'ch',ш:'sh',щ:'sch',ъ:'',ы:'y',ь:'',э:'e',ю:'yu',я:'ya',' ':'_' };
 export const translit = s => s.toLowerCase().split('').map(c => TR[c] ?? (/[\w-]/.test(c) ? c : '')).join('');
+
+/** 3D проекта: у одного модуля — обычная сцена, у нескольких — группа со сдвигом модулей; view — open, hideDoors, showHoles. */
+export function build3DProject(THREE, proj, view = {}, opts = {}) {
+  const k = 1 / 1000;
+  const built = proj.mods.map(m => {
+    const c = build3D(THREE, m.spec, { ...m.P, open: view.open, hideDoors: view.hideDoors, showHoles: view.showHoles }, opts);
+    c.traverse(o => { o.userData.mod = m.i; });
+    return c;
+  });
+  if (!proj.multi) return built[0];
+  const grp = new THREE.Group();
+  built.forEach((c, i) => { const m = proj.mods[i]; c.position.set(m.x * k, m.y * k, m.z * k); grp.add(c); });
+  return grp;
+}

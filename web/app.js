@@ -1,5 +1,5 @@
 import { buildSpec, isDrawer } from './model.js';
-import { build3D } from './build3d.js';
+import { build3DProject } from './build3d.js';
 import { toCSV, toDXF, groupParts, nest, partKey, sawSize } from './export.js';
 import { toCutCSV, toDrillJSON } from './export-cut.js';
 import { nestMapDXF } from './dxf.js';
@@ -175,14 +175,7 @@ function renderWarn(full) {
   if (has) { const b = el('button', 'fixbtn', 'Исправить автоматически'); b.title = 'Раздвинет перекрывающиеся элементы, сдвинет полки от петель, подберёт ручки и фасады так, чтобы всё открывалось'; b.onclick = fixAll; w.append(b); }
   w.style.display = w.childNodes.length ? '' : 'none';
 }
-function composeModel(asm) {
-  const k = 1 / 1000, view = { open: root.open, hideDoors: root.hideDoors, showHoles: root.showHoles };
-  const built = proj.mods.map(m => { const c = build3D(THREE, m.spec, { ...m.P, ...view }, { asm }); c.traverse(o => { o.userData.mod = m.i; }); return c; });
-  if (!proj.multi) return built[0];
-  const grp = new THREE.Group();
-  built.forEach((c, i) => { const m = proj.mods[i]; c.position.set(m.x * k, m.y * k, m.z * k); grp.add(c); });
-  return grp;
-}
+const composeModel = asm => build3DProject(THREE, proj, root, { asm });
 function render(frame) {
   normalize(root);
   active = Math.min(active, moduleCount(root) - 1); P = cabinetOf(root, active);
@@ -869,11 +862,11 @@ const EXPORTS = {
   labels: () => openProd('#labels'),
   asm: () => openProd('#asm'),
   buy: () => openProd('#buy'),
-  csv: () => download(toCSV(spec, `${typeLabel(P.type)} ${Math.round(spec.meta.W)} × ${P.height} × ${P.depth} мм`), stamp() + '.csv', 'text/csv;charset=utf-8'),
-  dxf: () => download(toDXF(spec), stamp() + '.dxf', 'application/dxf'),
-  cutcsv: () => download(toCutCSV(groupParts(spec), { textured: l => isTextured(cat, l) }), stamp() + '_raskroy.csv', 'text/csv;charset=utf-8'),
-  cutmap: () => download(nestMapDXF(nestFor(spec)), stamp() + '_karta_raskroya.dxf', 'application/dxf'),
-  drill: () => download(toDrillJSON(groupParts(spec), { project: db[cur] ? db[cur].name : '', type: P.type }), stamp() + '_operacii.json', 'application/json'),
+  csv: () => download(toCSV(proj.spec, proj.multi ? `Проект из ${moduleCount(root)} модулей ${Math.round(proj.spec.meta.W)} × ${Math.round(proj.spec.meta.H)} × ${Math.round(proj.spec.meta.D)} мм` : `${typeLabel(P.type)} ${Math.round(spec.meta.W)} × ${P.height} × ${P.depth} мм`), stamp() + '.csv', 'text/csv;charset=utf-8'),
+  dxf: () => download(toDXF(proj.spec), stamp() + '.dxf', 'application/dxf'),
+  cutcsv: () => download(toCutCSV(groupParts(proj.spec), { textured: l => isTextured(cat, l) }), stamp() + '_raskroy.csv', 'text/csv;charset=utf-8'),
+  cutmap: () => download(nestMapDXF(nestFor(proj.spec)), stamp() + '_karta_raskroya.dxf', 'application/dxf'),
+  drill: () => download(toDrillJSON(groupParts(proj.spec), { project: db[cur] ? db[cur].name : '', modules: moduleList(root).map(m => ({ name: m.name, type: cabinetOf(root, m.i).type })) }), stamp() + '_operacii.json', 'application/json'),
   obj: () => stage._runExport('obj'),
   glb: () => stage._runExport('glb'),
   cat: () => openCatalog(),

@@ -1,6 +1,7 @@
 // Страница «Задание на распил»: расчёт и HTML целиком, без DOM и хранилища — поэтому проверяется в node.
 // Данные для обработчиков (скачивание, отметки «куплено») возвращаются наружу; их вешает production.html.
 import { buildSpec } from './model.js';
+import { buildProject } from './project.js';
 import { groupParts, nest, edgeSummary, grainOf } from './export.js';
 import { partDrawing } from './partdraw.js';
 import { sheetFor, isTextured } from './catalog.js';
@@ -24,16 +25,20 @@ export const shopUnit = l => (l.unit === 'уп.' ? `${l.packs} уп. × ${l.pack
  * baseHref — для разбора ссылок; date — дата в шапках. Возвращает { html, spec, title, stamp, shop, rub }.
  */
 export function renderProduction({ P, cat, projName, preview = null, shareToken = '', bought = new Set(), baseHref = 'http://localhost/', date = new Date() }) {
-  const HW = resolveHw(cat, P), spec = buildSpec(P, { hw: HW }), G = groupParts(spec), E = edgeSummary(G);
-  const N = nest(G, { sheetFor: (l, T) => sheetFor(cat, l, T), textured: l => isTextured(cat, l), kerf: cat.cut.kerf, trim: cat.cut.trim, minOffcut: cat.cut.minOffcut, stock: cat.stock });
+  const HW = resolveHw(cat, P), PJ = buildProject(P, { hwFor: p => resolveHw(cat, p) }), spec = PJ.spec, mods = PJ.mods, multi = PJ.multi, G = groupParts(spec), E = edgeSummary(G);
+  const NEST = { sheetFor: (l, T) => sheetFor(cat, l, T), textured: l => isTextured(cat, l), kerf: cat.cut.kerf, trim: cat.cut.trim, minOffcut: cat.cut.minOffcut, stock: cat.stock };
+  const N = nest(G, NEST);
   const EST = estimate(spec, G, N, E, cat, P);
-  const CHK = checkBuild(spec, P, { N, hw: HW }), SHOP = shoppingList(spec, cat, P), STEPS = assemblySteps(spec, G, P);
+  const CHK = multi
+    ? mods.flatMap(m => checkBuild(m.spec, m.P, { N: nest(groupParts(m.spec), { ...NEST, stock: [] }), hw: resolveHw(cat, m.P) }).map(f => ({ ...f, text: `${m.name}: ${f.text}` })))
+    : checkBuild(spec, P, { N, hw: HW });
+  const SHOP = shoppingList(spec, cat, P);
   const cur = cat.currency || '₽', rub = v => v.toLocaleString('ru-RU', { maximumFractionDigits: 0 }) + ' ' + cur;
   const W = Math.round(spec.meta.W), TYPES = { wardrobe: 'Шкаф', rack: 'Стеллаж', nightstand: 'Тумба прикроватная', dresser: 'Комод', tv: 'ТВ-тумба' };
-  const title = `${TYPES[P.type] || 'Изделие'} ${W}×${P.height}×${P.depth} мм`;
+  const title = multi ? `Проект из ${mods.length} модулей ${W}×${Math.round(spec.meta.H)}×${Math.round(spec.meta.D)} мм` : `${TYPES[P.type] || 'Изделие'} ${W}×${P.height}×${P.depth} мм`;
   const safeUrl = u => safeUrlOf(u, baseHref);
   const fmt = v => String(v).replace('.', ',');
-  const stamp = `${P.type}_${W}x${P.height}x${P.depth}`;
+  const stamp = multi ? `proekt_${mods.length}mod_${W}x${Math.round(spec.meta.H)}x${Math.round(spec.meta.D)}` : `${P.type}_${W}x${P.height}x${P.depth}`;
 
   // materials summary
   const mats = new Map();
@@ -51,15 +56,15 @@ export function renderProduction({ P, cat, projName, preview = null, shareToken 
   if (spec.warnings.length) html += `<div class="warn m-task"><b>Проверьте конструкцию:</b><br>${spec.warnings.map(esc).join('<br>')}</div>`;
   html += `<section class="sheet m-task"><h1>Задание на распил и присадку</h1><div class="muted">${esc(title)} · ${date.toLocaleDateString('ru-RU')}</div>
   <div class="meta">
-  <div><span>Габариты</span>${W} × ${P.height} × ${P.depth} мм</div>
+  ${multi ? mods.map(m => `<div><span>${esc(m.name)}</span>${esc(TYPES[m.P.type] || 'Изделие')} ${Math.round(m.W)} × ${m.P.height} × ${m.P.depth} мм${m.y ? `, подъём ${m.y} мм` : ''}, ЛДСП ${esc(m.P.bodyName)} ${m.P.thickness} мм, фасады ${esc(m.P.frontName)}</div>`).join('') + `<div><span>Габариты проекта</span>${W} × ${Math.round(spec.meta.H)} × ${Math.round(spec.meta.D)} мм</div>` : `<div><span>Габариты</span>${W} × ${P.height} × ${P.depth} мм</div>
   <div><span>Корпус</span>ЛДСП ${esc(P.bodyName)}, ${P.thickness} мм</div>
   <div><span>Фасады</span>${esc(P.frontName)}, ${P.frontT} мм</div>
   <div><span>Кромка</span>лицевая ${fmt(P.edgeFront)} мм, скрытая ${P.edgeHidden ? fmt(P.edgeHidden) + ' мм' : 'нет'}</div>
-  <div><span>Задняя стенка</span>${{ groove: 'ХДФ 4 мм в паз', overlay: 'ХДФ 4 мм накладная', none: 'нет' }[P.backType]}</div>
+  <div><span>Задняя стенка</span>${{ groove: 'ХДФ 4 мм в паз', overlay: 'ХДФ 4 мм накладная', none: 'нет' }[P.backType]}</div>`}
   <div><span>Деталей</span>${G.reduce((a, g) => a + g.qty, 0)} шт., ${G.length} позиций</div>
   </div></section>`;
 
-  html += `<section class="sheet m-task"><h2>Общий вид</h2><div class="views">${frontView(spec, P)}${frontView(spec, P, { fronts: true })}${sideView(spec, P)}</div></section>`;
+  html += `<section class="sheet m-task"><h2>Общий вид</h2>${mods.map(m => `${multi ? `<h3>${esc(m.name)}</h3>` : ''}<div class="views">${frontView(m.spec, m.P)}${frontView(m.spec, m.P, { fronts: true })}${sideView(m.spec, m.P)}</div>`).join('')}</section>`;
 
   // смета
   const nz = v => String(v).replace('.', ',');
@@ -70,7 +75,7 @@ export function renderProduction({ P, cat, projName, preview = null, shareToken 
   // коммерческое предложение
   html += `<section class="sheet kp m-kp"><h1>Коммерческое предложение</h1><div class="muted">${esc(projName)} · ${date.toLocaleDateString('ru-RU')}</div>
   ${preview ? `<p><img alt="Вид изделия" src="${preview}"></p>` : ''}
-  <div class="meta"><div><span>Изделие</span>${esc(title)}</div><div><span>Корпус</span>ЛДСП ${esc(P.bodyName)}, ${P.thickness} мм</div><div><span>Фасады</span>${esc(P.frontName)}</div><div><span>Задняя стенка</span>${{ groove: 'ХДФ 4 мм в паз', overlay: 'ХДФ 4 мм накладная', none: 'нет' }[P.backType]}</div></div>
+  <div class="meta"><div><span>Изделие</span>${esc(title)}</div>${multi ? mods.map(m => `<div><span>${esc(m.name)}</span>${esc(TYPES[m.P.type] || 'Изделие')} ${Math.round(m.W)} × ${m.P.height} × ${m.P.depth} мм, ЛДСП ${esc(m.P.bodyName)}, фасады ${esc(m.P.frontName)}</div>`).join('') : `<div><span>Корпус</span>ЛДСП ${esc(P.bodyName)}, ${P.thickness} мм</div><div><span>Фасады</span>${esc(P.frontName)}</div><div><span>Задняя стенка</span>${{ groove: 'ХДФ 4 мм в паз', overlay: 'ХДФ 4 мм накладная', none: 'нет' }[P.backType]}</div>`}</div>
   <div class="price">${rub(EST.total)}</div><div class="muted">Стоимость включает материалы, фурнитуру, раскрой, кромление, присадку и сборку.${EST.missing.length ? ' <span class="nop">Не все позиции оценены: проверьте цены в справочнике.</span>' : ''}</div>
   <h2 style="margin-top:20px">Условия</h2><div class="terms" contenteditable="true">Срок изготовления: 14 рабочих дней.\nОплата: 50% предоплата, остаток при получении.\nПредложение действительно 14 дней.</div></section>`;
 
@@ -91,27 +96,29 @@ export function renderProduction({ P, cat, projName, preview = null, shareToken 
   for (const g of G) for (let i = 1; i <= g.qty; i++) labels.push(`<div class="lab"><div><b>№${g.no} ${esc(g.name)}</b></div><div><div class="sz">${fmt(g.L)} × ${fmt(g.W)} × ${g.T}</div><div class="sz">пил. ${fmt(g.saw.L)} × ${fmt(g.saw.W)}</div><div class="mt">${esc(g.label)} · сек. ${g.secLabel}${g.qty > 1 ? ` · ${i}/${g.qty}` : ''}</div></div><div class="mt">${esc(projName)}</div><div class="qr">${qrSvg(`${projName}|№${g.no}|${g.name}|${g.L}x${g.W}x${g.T}|сек.${g.secLabel}`)}</div><div class="edge">${edgeIcon(g)}</div></div>`);
   html += `<section class="sheet m-labels"><h2>Этикетки деталей</h2><p class="muted">${labels.length} шт., 70×37 мм, 24 на лист А4 (печать без полей, масштаб 100%). Кромка на схеме: чёрная — 1 мм и толще, серая — 0,4 мм; Д1 — снизу, Д2 — сверху, Ш1 — слева, Ш2 — справа. QR содержит проект, номер, название и размер детали.</p><div class="labels">${labels.join('')}</div></section>`;
 
-  // инструкция по сборке: перечень, затем шаги с аксонометрией
-  {
-    const numbers = new Map(spec.parts.map(p => [p, (G.find(g => partKey(g) === partKey(p)) || {}).no]));
+  // инструкция по сборке: перечень, затем шаги с аксонометрией (для проекта из модулей — по каждому модулю, номера деталей общие)
+  for (const m of mods) {
+    const Gm = groupParts(m.spec).map(g => ({ ...g, no: (G.find(x => partKey(x) === partKey(g)) || g).no }));
+    const STEPS = assemblySteps(m.spec, Gm, m.P);
+    const numbers = new Map(m.spec.parts.map(p => [p, (G.find(g => partKey(g) === partKey(p)) || {}).no]));
     const tools = [...new Set(STEPS.flatMap(s => s.tools))].filter(Boolean);
-    html += `<section class="sheet m-asm"><h1>Инструкция по сборке</h1><div class="muted">${esc(title)} · ${date.toLocaleDateString('ru-RU')}</div>
-    <div class="views" style="margin-top:14px">${axoView(spec, { highlight: null, explode: false, width: 520 })}</div>
+    html += `<section class="sheet m-asm"><h1>Инструкция по сборке${multi ? `: ${esc(m.name)}` : ''}</h1><div class="muted">${esc(title)} · ${date.toLocaleDateString('ru-RU')}</div>
+    <div class="views" style="margin-top:14px">${axoView(m.spec, { highlight: null, explode: false, width: 520 })}</div>
     <div class="grid2" style="margin-top:16px"><div><h2>Что понадобится</h2><p>${tools.map(esc).join('; ')}.</p><p class="muted">Номера деталей (№) совпадают с заданием на распил и этикетками. Перед сборкой разложите детали по номерам и сверьте с этикетками. Шагов: ${STEPS.length}.</p></div>
-    <div><h2>Фурнитура (всё в списке покупок)</h2><table><tr><th>Позиция</th><th class="n">шт.</th></tr>${spec.hw.map(([k, v]) => `<tr><td>${esc(k)}</td><td class="n">${v}</td></tr>`).join('')}</table></div></div></section>`;
+    <div><h2>Фурнитура (всё в списке покупок)</h2><table><tr><th>Позиция</th><th class="n">шт.</th></tr>${m.spec.hw.map(([k, v]) => `<tr><td>${esc(k)}</td><td class="n">${v}</td></tr>`).join('')}</table></div></div></section>`;
     const shown = new Set();
     for (const st of STEPS) {
       shown.add(st.stage);
       let focus = null, explode = true;
       if (st.stage === 'drawerBox') { const gid = st.partRefs[0].group && st.partRefs[0].group.id; focus = st.partRefs.filter(p => p.group && p.group.id === gid); explode = false; }
-      const svg = axoView(spec, { shown: new Set(shown), highlight: st.stage, numbers, focus, explode, width: 560 });
+      const svg = axoView(m.spec, { shown: new Set(shown), highlight: st.stage, numbers, focus, explode, width: 560 });
       html += `<section class="sheet step m-asm"><h2><span class="no">${st.no}</span>${esc(st.title)}</h2><div class="cols"><div>${svg}${focus ? '<div class="muted">Схема одного короба; остальные собираются так же.</div>' : ''}</div><div>
       ${st.text.map(t => `<p>${esc(t)}</p>`).join('')}
       ${st.parts.length ? `<table><tr><th class="n">№</th><th>Деталь</th><th class="n">Размер</th><th class="n">Шт</th></tr>${st.parts.map(x => `<tr><td class="n">${x.no}</td><td>${esc(x.name)}</td><td class="n">${fmt(x.L)}×${fmt(x.W)}×${x.T}</td><td class="n">${x.qty}</td></tr>`).join('')}</table>` : ''}
       ${st.hw.length ? `<table><tr><th>Крепёж и фурнитура</th><th class="n">Шт</th></tr>${st.hw.map(x => `<tr><td>${esc(x.name)}</td><td class="n">${x.qty}</td></tr>`).join('')}</table>` : ''}
       <div class="tools">Инструмент: ${st.tools.map(esc).join('; ')}</div></div></div></section>`;
     }
-    html += `<section class="sheet step m-asm"><h2><span class="no">✓</span>Готово</h2><div class="cols"><div>${axoView(spec, { highlight: null, explode: false, width: 560 })}</div><div><p>Проверьте зазоры дверей и ящиков, отрегулируйте петли, снимите защитную плёнку. Поставьте изделие по уровню${P.wallFix ? ' и закрепите к стене' : ''}.</p>${P.wallFix ? '' : '<p class="muted">Высокое изделие лучше крепить к стене: включите «Крепление к стене» в параметрах.</p>'}</div></div></section>`;
+    html += `<section class="sheet step m-asm"><h2><span class="no">✓</span>Готово${multi ? `: ${esc(m.name)}` : ''}</h2><div class="cols"><div>${axoView(m.spec, { highlight: null, explode: false, width: 560 })}</div><div><p>Проверьте зазоры дверей и ящиков, отрегулируйте петли, снимите защитную плёнку. Поставьте изделие по уровню${m.P.wallFix ? ' и закрепите к стене' : ''}.</p>${m.P.wallFix ? '' : '<p class="muted">Высокое изделие лучше крепить к стене: включите «Крепление к стене» в параметрах.</p>'}</div></div></section>`;
   }
 
   // список покупок с отметками «куплено»

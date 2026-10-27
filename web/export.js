@@ -12,17 +12,28 @@ const r = v => Math.round(v * 10) / 10;
 /** Ключ, по которому одинаковые детали сводятся в одну позицию спецификации. */
 export const partKey = p => JSON.stringify([p.name, p.label, p.T, r(p.L), r(p.W), p.edges, p.holes, p.grooves, p.notes, p.mill || null, p.cutouts || null]);
 
+/** Секции детали: «2, 3»; в проекте из нескольких модулей — «М1·2, М2·1» (модуль и секция). */
+function secLabelOf(secs) {
+  const list = [...secs].map(k => k.split(':').map(Number));
+  const multi = [...secs].some(k => k.includes(':'));
+  const out = multi
+    ? list.sort((a, b) => a[0] - b[0] || a[1] - b[1]).map(([m, sec]) => (sec ? `М${m + 1}·${sec}` : `М${m + 1}`))
+    : list.map(a => a[0]).filter(Boolean).sort((a, b) => a - b);
+  return out.join(', ') || '—';
+}
+
 export function groupParts(spec) {
   const map = new Map();
   for (const p of spec.parts) {
     const key = partKey(p);
     const g = map.get(key);
-    if (g) { g.qty++; g.secs.add(p.sec); } else map.set(key, { ...p, L: r(p.L), W: r(p.W), qty: 1, secs: new Set([p.sec]) });
+    const sk = p.mod === undefined ? String(p.sec) : `${p.mod}:${p.sec}`;
+    if (g) { g.qty++; g.secs.add(sk); } else map.set(key, { ...p, L: r(p.L), W: r(p.W), qty: 1, secs: new Set([sk]) });
   }
   const order = ['body', 'front', 'back', 'glass', 'mirror'];
   return [...map.values()]
     .sort((a, b) => order.indexOf(a.mat) - order.indexOf(b.mat) || b.L * b.W - a.L * a.W)
-    .map((g, i) => ({ ...g, no: i + 1, saw: sawSize(g), secLabel: [...g.secs].filter(Boolean).sort((a, b) => a - b).join(', ') || '—' }));
+    .map((g, i) => ({ ...g, no: i + 1, saw: sawSize(g), secLabel: secLabelOf(g.secs) }));
 }
 
 export function edgeSummary(groups) {

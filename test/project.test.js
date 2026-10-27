@@ -169,3 +169,55 @@ describe('документы из общей спецификации', () => {
     expect(merged.length).toBe(single.length);
   });
 });
+
+import { toCSV, toDXF, nest } from '../web/export.js';
+import { toCutCSV, toDrillJSON } from '../web/export-cut.js';
+import { build3DProject } from '../web/build3d.js';
+import { renderProduction } from '../web/production-view.js';
+import { DEFAULT_CATALOG } from '../web/catalog.js';
+import * as THREE from '../web/vendor/three/build/three.module.js';
+
+describe('документы проекта из нескольких модулей', () => {
+  const root = () => { const r = makePreset('wardrobe'); addModule(r, makePreset('dresser'), { name: 'Комод', gap: 20 }); return r; };
+  const parseCSV = t => t.replace(/^﻿/, '').split('\r\n').map(l => l.split(';').map(c => c.replace(/^"|"$/g, '')));
+
+  it('метка секции показывает модуль и секцию', () => {
+    const G = groupParts(buildProject(root()).spec);
+    expect(G.some(g => /М1·\d/.test(g.secLabel))).toBe(true);
+    expect(G.some(g => /М2·\d/.test(g.secLabel))).toBe(true);
+    expect(groupParts(buildSpec(makePreset('wardrobe'))).every(g => !/М\d/.test(g.secLabel))).toBe(true);
+  });
+  it('CSV, DXF, раскрой и JSON содержат детали всех модулей', () => {
+    const r = root(), spec = buildProject(r).spec, G = groupParts(spec), total = G.reduce((a, g) => a + g.qty, 0);
+    expect(total).toBe(buildSpec(r).parts.length + buildSpec(r.modules[0].P).parts.length);
+    expect(toCSV(spec, 'Т').split('\r\n').length).toBeGreaterThan(G.length);
+    expect(Buffer.from(toDXF(spec)).toString('latin1').match(/POLYLINE\r\n8\r\n(KORPUS|FASAD|HDF|STEKLO|ZERKALO)/g).length).toBeGreaterThanOrEqual(G.length);
+    const N = nest(G); expect(N.sheets.reduce((a, s) => a + s.pieces.length, 0) + N.over.length).toBe(G.filter(g => g.mat !== 'glass' && g.mat !== 'mirror').reduce((a, g) => a + g.qty, 0));
+    expect(parseCSV(toCutCSV(G)).length - 1).toBe(G.filter(g => g.mat !== 'glass' && g.mat !== 'mirror').length);
+    expect(JSON.parse(toDrillJSON(G)).parts.length).toBe(G.length);
+  });
+  it('3D проекта: по группе на модуль, модули сдвинуты, у мешей есть номер модуля', () => {
+    const r = root(), pr = buildProject(r), grp = build3DProject(THREE, pr, r);
+    expect(grp.children.length).toBe(2);
+    expect(grp.children[1].position.x).toBeCloseTo(pr.mods[1].x / 1000, 6);
+    const mods = new Set(); grp.traverse(o => { if (o.isMesh) mods.add(o.userData.mod); });
+    expect([...mods].sort()).toEqual([0, 1]);
+    expect(build3DProject(THREE, buildProject(makePreset('rack')), makePreset('rack')).isGroup).toBe(true);
+  });
+  it('страница задания: общие количества, модули в шапке, инструкция сборки по каждому модулю', () => {
+    const P = root();
+    const { html, spec } = renderProduction({ P, cat: JSON.parse(JSON.stringify(DEFAULT_CATALOG)), projName: 'Т', preview: null, shareToken: null, bought: new Set(), baseHref: 'http://x/' });
+    expect(html).not.toMatch(/NaN|undefined/);
+    expect(html).toMatch(/Проект из 2 модулей/);
+    expect(html).toContain('<span>Комод</span>');
+    expect(html).toMatch(/Инструкция по сборке: Комод/);
+    expect(html).toMatch(/Инструкция по сборке: Корпус 1/);
+    expect(html).toMatch(/М2·\d/);
+    expect(spec.parts.length).toBe(buildProject(P).spec.parts.length);
+  });
+  it('одиночный проект: страница задания не меняется (одна инструкция без названия модуля)', () => {
+    const { html } = renderProduction({ P: makePreset('wardrobe'), cat: JSON.parse(JSON.stringify(DEFAULT_CATALOG)), projName: 'Т', preview: null, shareToken: null, bought: new Set(), baseHref: 'http://x/' });
+    expect(html).toMatch(/<h1>Инструкция по сборке<\/h1>/);
+    expect(html).not.toMatch(/Проект из \d+ модул/);
+  });
+});
