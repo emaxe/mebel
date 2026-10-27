@@ -8,6 +8,7 @@ import { assemblySteps } from './assembly.js';
 import { modelsFor, selKey, variantOf, resolveHw, KIND_LABELS } from './fittings.js';
 import { HW_PARAM_DEFS, HW_DEFAULTS } from './hwparams.js';
 import { dimensions } from './dims.js';
+import { buildProject, moduleList, addModule, duplicateModule, removeModule, moveModule, setModuleProps, cabinetOf, moduleCount } from './project.js';
 import { orientLines, edgeNames, machiningRows } from './partinfo.js';
 import { autoFixAsync, kinProblems } from './autofix.js';
 import { MIN_DRAWER_H, FILL_LABELS, rulesOf, makePreset, normalize, fillItems, innerH, autoShelves, stepShelves, fitWidth, totalWidth, sectionOfMessage, moveItem, autoDrawers, packDrawers, redistribute, fitSections, clamp } from './rules.js';
@@ -33,8 +34,8 @@ let { db, cur } = loadProjects();
 let placeholder = false;
 const usePlaceholder = () => { placeholder = true; cur = newId(); db[cur] = { name: 'Новый проект', updated: Date.now(), P: makePreset('wardrobe') }; };
 if (!cur) usePlaceholder();
-let P = normalize(db[cur].P);
-P.asmStep = 0; // пошаговая сборка в 3D — режим просмотра, при открытии проекта выключен
+let root = normalize(db[cur].P), active = 0, P = root, proj = null;
+root.asmStep = 0; // пошаговая сборка в 3D — режим просмотра, при открытии проекта выключен
 let sel = 0, selPartKey = null, partBox = null, model, spec, outline, asmSteps = [], hwp;
 let sync = null, account = null; // сервер необязателен: без него приложение остаётся локальным
 const savedEl = document.getElementById('saved');
@@ -43,7 +44,7 @@ let saveTimer = 0, pendingSave = false;
 const save = () => {
   clearTimeout(saveTimer); pendingSave = false;
   if (placeholder || !db[cur]) return;
-  db[cur].P = P; db[cur].updated = Date.now();
+  db[cur].P = root; db[cur].updated = Date.now();
   const ok = saveProjects(db, cur);
   savedEl.textContent = ok ? '✓ Сохранено' : 'Не сохранено: нет места';
   savedEl.className = 'saved ' + (ok ? 'ok' : 'err');
@@ -60,16 +61,16 @@ const undoBtn = document.getElementById('undo'), redoBtn = document.getElementBy
 const syncUndo = () => { undoBtn.disabled = !hist.length; redoBtn.disabled = !redoSt.length; };
 const stack = (a, j) => { a.push(j); if (a.length > 60) a.shift(); };
 /** Запомнить состояние до правки (один раз за жест); endEdit убирает запись, если ничего не изменилось. */
-const beginEdit = () => { if (editing === null) { editing = JSON.stringify(P); stack(hist, editing); redoSt.length = 0; syncUndo(); } };
-const endEdit = () => { if (editing === null) return; if (JSON.stringify(P) === editing) hist.pop(); editing = null; syncUndo(); };
-const snap = () => { stack(hist, JSON.stringify(P)); redoSt.length = 0; syncUndo(); };
+const beginEdit = () => { if (editing === null) { editing = JSON.stringify(root); stack(hist, editing); redoSt.length = 0; syncUndo(); } };
+const endEdit = () => { if (editing === null) return; if (JSON.stringify(root) === editing) hist.pop(); editing = null; syncUndo(); };
+const snap = () => { stack(hist, JSON.stringify(root)); redoSt.length = 0; syncUndo(); };
 const restore = j => {
-  const keep = { open: P.open, hideDoors: P.hideDoors, showHoles: P.showHoles, asmStep: P.asmStep };
-  P = normalize({ ...JSON.parse(j), ...keep }); sel = Math.min(sel, P.sections.length - 1); kinKey = '';
+  const keep = { open: root.open, hideDoors: root.hideDoors, showHoles: root.showHoles, asmStep: root.asmStep };
+  root = normalize({ ...JSON.parse(j), ...keep }); active = Math.min(active, moduleCount(root) - 1); P = cabinetOf(root, active); sel = Math.min(sel, P.sections.length - 1); kinKey = ''; selPartKey = null;
   drawAll(); render(true); syncUndo();
 };
-const undo = () => { const j = hist.pop(); if (!j) return; stack(redoSt, JSON.stringify(P)); restore(j); };
-const redo = () => { const j = redoSt.pop(); if (!j) return; stack(hist, JSON.stringify(P)); restore(j); };
+const undo = () => { const j = hist.pop(); if (!j) return; stack(redoSt, JSON.stringify(root)); restore(j); };
+const redo = () => { const j = redoSt.pop(); if (!j) return; stack(hist, JSON.stringify(root)); restore(j); };
 undoBtn.onclick = undo; redoBtn.onclick = redo;
 const act = fn => (...a) => { beginEdit(); try { fn(...a); } finally { endEdit(); } };
 addEventListener('keydown', e => {
@@ -151,11 +152,12 @@ let panelTimer = 0, panelNote = null;
 function renderWarn(full) {
   const w = document.getElementById('warn'), ready = full || panelKey() === kinKey;
   const calc = ready ? kinematicWarnings() : [], issues = ready ? buildIssues : [];
+  const others = proj && proj.multi ? dedupe(proj.mods.filter(m => m.i !== active).flatMap(m => m.spec.warnings.map(w => `${m.name}: ${w}`))) : [];
   const all = [...dedupe(spec.warnings), ...calc], note = panelNote;
   if (full) panelNote = null;
   w.innerHTML = '';
   if (note && note.log.length) { const d = el('div', 'fixed'); d.textContent = 'Исправлено: ' + note.log.join('; '); w.append(d); }
-  const has = all.length > 0 || issues.length > 0;
+  const has = all.length > 0 || issues.length > 0 || others.length > 0;
   if (note && !note.log.length && has) w.append(el('div', 'fixed', 'Автоматически исправить не удалось — измените параметры вручную.'));
   const line = x => {
     const d = el('div', '', x), i = sectionOfMessage(x, P.sections.length);
@@ -167,29 +169,42 @@ function renderWarn(full) {
     return d;
   };
   all.forEach(x => w.append(line(x)));
+  others.forEach(x => w.append(el('div', '', x)));
   issues.forEach(x => w.append(line(x)));
   if (!ready) w.append(el('div', 'hint2', 'Проверяю конструкцию…'));
   if (has) { const b = el('button', 'fixbtn', 'Исправить автоматически'); b.title = 'Раздвинет перекрывающиеся элементы, сдвинет полки от петель, подберёт ручки и фасады так, чтобы всё открывалось'; b.onclick = fixAll; w.append(b); }
   w.style.display = w.childNodes.length ? '' : 'none';
 }
+function composeModel(asm) {
+  const k = 1 / 1000, view = { open: root.open, hideDoors: root.hideDoors, showHoles: root.showHoles };
+  const built = proj.mods.map(m => { const c = build3D(THREE, m.spec, { ...m.P, ...view }, { asm }); c.traverse(o => { o.userData.mod = m.i; }); return c; });
+  if (!proj.multi) return built[0];
+  const grp = new THREE.Group();
+  built.forEach((c, i) => { const m = proj.mods[i]; c.position.set(m.x * k, m.y * k, m.z * k); grp.add(c); });
+  return grp;
+}
 function render(frame) {
-  normalize(P);
+  normalize(root);
+  active = Math.min(active, moduleCount(root) - 1); P = cabinetOf(root, active);
   sel = Math.min(sel, P.sections.length - 1);
   hwp = resolveHw(cat, P);
-  spec = buildSpec(P, { hw: hwp });
+  proj = buildProject(root, { hwFor: p => resolveHw(cat, p) });
+  spec = proj.mods[active].spec;
   saveSoon();
   let asm = null;
-  if (P.asmStep > 0) {
+  if (root.asmStep > 0) {
     asmSteps = assemblySteps(spec, groupParts(spec), P);
-    P.asmStep = clamp(P.asmStep, 1, Math.max(1, asmSteps.length));
-    asm = { shown: new Set(asmSteps.slice(0, P.asmStep).map(s => s.stage)), current: asmSteps[P.asmStep - 1].stage };
+    root.asmStep = clamp(root.asmStep, 1, Math.max(1, asmSteps.length));
+    asm = { shown: new Set(asmSteps.slice(0, root.asmStep).map(s => s.stage)), current: asmSteps[root.asmStep - 1].stage };
   }
-  model = build3D(THREE, spec, P, { asm });
+  model = composeModel(asm);
   stage.setObject(model, { keepCamera: !frame, floorY: 0 });
   drawAsmBar();
-  const m = spec.meta;
+  const m = spec.meta, pm = proj.spec.meta;
   const wi = document.getElementById('totalW'); if (wi && document.activeElement !== wi) wi.value = Math.round(m.W);
-  document.getElementById('dims').textContent = `${Math.round(m.W)} × ${P.height} × ${P.depth} мм · деталей: ${spec.parts.length}`;
+  document.getElementById('dims').textContent = proj.multi
+    ? `${moduleCount(root)} мод. · ${Math.round(pm.W)} × ${Math.round(pm.H)} × ${Math.round(pm.D)} мм · деталей: ${proj.spec.parts.length}`
+    : `${Math.round(m.W)} × ${P.height} × ${P.depth} мм · деталей: ${spec.parts.length}`;
   drawHeader(); scheduleThumb();
   if (fixNote) { panelNote = fixNote; fixNote = null; }
   renderWarn(false); // сразу то, что считается мгновенно; кинематика, проверка и раскрой — после паузы, пока тянут ползунок
@@ -230,7 +245,7 @@ function partOutline() {
   if (idx < 0) { selPartKey = null; hidePartCard(); return; }
   model.updateMatrixWorld(true);
   const box = new THREE.Box3();
-  model.traverse(o => { if (o.isMesh && o.userData.part === idx) box.expandByObject(o); });
+  model.traverse(o => { if (o.isMesh && o.userData.part === idx && (o.userData.mod || 0) === active) box.expandByObject(o); });
   if (box.isEmpty()) { hidePartCard(); return; }
   const size = box.getSize(new THREE.Vector3()).addScalar(0.006), c = box.getCenter(new THREE.Vector3());
   partBox = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(size.x, size.y, size.z)), new THREE.LineBasicMaterial({ color: 0x2a6fd4, depthTest: false, transparent: true }));
@@ -252,7 +267,8 @@ function applyDim(edit, v) {
 function buildDims() {
   dimBox.textContent = ''; dimSvg.textContent = ''; dimEls = []; dimKey = '';
   if (!dimPrefs.on || !spec) return;
-  for (const item of dimensions(spec, P, sel)) {
+  const am = proj.mods[active];
+  for (const item of dimensions(spec, P, sel, { off: [am.x, am.y, am.z], total: proj.multi ? proj.spec.meta : null })) {
     const lines = ['ext', 'ext', 'main'].map(c => { const l = document.createElementNS(NS, 'line'); if (c === 'ext') l.setAttribute('class', 'ext'); else if (item.kind === 'gap') l.setAttribute('class', 'gap'); dimSvg.append(l); return l; });
     const btn = el('button', item.kind === 'gap' ? 'gap' : '', String(item.value));
     btn.title = item.edit ? 'Нажмите, чтобы ввести размер' : 'Просвет между полками';
@@ -295,7 +311,8 @@ function highlight() {
   const m = spec.meta, s = m.sections[sel]; if (!s) return;
   const k = 1 / 1000;
   outline = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry((s.w - 6) * k, (m.ih - 6) * k, (m.D + 40) * k)), new THREE.LineBasicMaterial({ color: 0xd4672a, depthTest: false, transparent: true }));
-  outline.position.set(s.x * k, ((m.yB + m.yT) / 2) * k + model.position.y, 0.02);
+  const am = proj.mods[active];
+  outline.position.set((s.x + am.x) * k, ((m.yB + m.yT) / 2 + am.y) * k + model.position.y, 0.02 + am.z * k);
   outline.renderOrder = 10; sc.add(outline);
 }
 
@@ -712,45 +729,113 @@ function drawSections() {
 function select(i) { sel = i; drawSections(); highlight(); }
 
 function drawGlobal() {
-  const root = document.getElementById('controls');
-  const was = new Map([...root.querySelectorAll('details')].map(d => [d.querySelector('summary').textContent, d.open]));
-  root.innerHTML = '';
+  const ctl = document.getElementById('controls');
+  const was = new Map([...ctl.querySelectorAll('details')].map(d => [d.querySelector('summary').textContent, d.open]));
+  ctl.innerHTML = '';
   for (const [title, rows, groupWhen] of globalDefs()) {
     const d = el('details'); d.open = was.has(title) ? was.get(title) : title === 'Корпус';
     if (groupWhen) { d.dataset.when = 1; d._when = groupWhen; }
     d.append(el('summary', '', title));
     rows.forEach(c => d.append(c.custom ? c.custom() : control(c, c.obj === 'fittings' ? (P.fittings || (P.fittings = {})) : P, onGlobal)));
-    root.append(d);
+    ctl.append(d);
   }
   const v = document.getElementById('view'); v.innerHTML = '';
-  viewDefs().forEach(c => v.append(control(c, P, () => render(false))));
+  viewDefs().forEach(c => v.append(control(c, root, () => render(false))));
   v.append(control({ k: 'on', l: 'Размеры', tog: 1, nohist: 1, hint: 'Габариты, ширины секций и просветы между полками выбранной секции. Нажмите на число, чтобы ввести новый размер.' }, dimPrefs, () => { try { localStorage.setItem('mebel-dims', dimPrefs.on ? '1' : '0'); } catch { /* без сохранения */ } buildDims(); }));
   v.append(asmBox); drawAsmBar();
+}
+
+// ── модули проекта: несколько корпусов в одном проекте
+const modsBox = document.getElementById('mods');
+const keepColorsOf = () => ({ bodyColor: P.bodyColor, bodyName: P.bodyName, frontColor: P.frontColor, frontName: P.frontName, metalColor: P.metalColor });
+function afterModuleChange(frame = true) {
+  active = Math.max(0, Math.min(active, moduleCount(root) - 1)); P = cabinetOf(root, active);
+  sel = 0; selPartKey = null; kinKey = '';
+  drawAll(); render(frame);
+}
+function setActive(i) { if (i === active) return; active = i; afterModuleChange(false); }
+function resetActive() {
+  const fresh = makePreset(P.type, keepColorsOf());
+  if (active === 0) {
+    const { modules, modName, modY, open, hideDoors, showHoles, asmStep } = root;
+    for (const k of Object.keys(root)) delete root[k];
+    Object.assign(root, fresh, { open, hideDoors, showHoles, asmStep });
+    if (modules) root.modules = modules; if (modName) root.modName = modName; if (modY) root.modY = modY;
+  } else root.modules[active - 1].P = fresh;
+  P = cabinetOf(root, active);
+}
+async function askAddModule() {
+  let type = 'wardrobe';
+  const body = el('div', 'dbody'), types = el('div', 'ptypes');
+  TYPES.forEach(([k, l]) => {
+    const b = el('button', 'ptype' + (k === type ? ' on' : '')); b.append(el('b', '', l), el('span', '', TYPE_INFO[k]));
+    b.onclick = () => { type = k; types.querySelectorAll('.ptype').forEach(x => x.classList.toggle('on', x === b)); };
+    types.append(b);
+  });
+  body.append(el('p', 'hint2', 'Новый корпус встанет справа от выбранного. Цвета возьмутся из текущего корпуса.'), types);
+  if (!(await modal('Добавить модуль', body, { ok: 'Добавить' }))) return;
+  act(() => { const i = addModule(root, makePreset(type, keepColorsOf()), { name: typeLabel(type), after: active }); if (i >= 0) active = i; })();
+  afterModuleChange(true);
+}
+function drawModules() {
+  modsBox.textContent = '';
+  const list = moduleList(root), multi = list.length > 1;
+  const strip = el('div', 'modstrip');
+  list.forEach(m => {
+    const c = cabinetOf(root, m.i), b = el('button', 'modchip' + (m.i === active ? ' on' : ''), m.name);
+    b.title = `${typeLabel(c.type)}: ${c.height} × ${c.depth} мм`; b.onclick = () => setActive(m.i);
+    strip.append(b);
+  });
+  const add = el('button', 'modchip add', '+ Модуль'); add.title = moduleCount(root) >= 12 ? 'Не больше 12 модулей' : 'Добавить корпус справа от выбранного: кухня, гарнитур, стенка из нескольких шкафов';
+  add.disabled = moduleCount(root) >= 12; add.onclick = askAddModule; strip.append(add);
+  modsBox.append(strip);
+  if (!multi) return;
+  const cur = list[active], card = el('div', 'modcard');
+  const field = (label, value, min, max, apply, hint) => {
+    const lab = el('label', '', label), inp = Object.assign(el('input'), { type: 'number', value, min, max, step: 1 });
+    if (hint) lab.title = hint;
+    inp.onchange = () => { const v = Math.round(+inp.value); if (!Number.isFinite(v) || inp.value === '') { inp.value = value; return; } act(() => apply(Math.max(min, Math.min(max, v))))(); drawModules(); render(true); };
+    lab.append(inp); return lab;
+  };
+  const name = Object.assign(el('input', 'modname'), { type: 'text', value: cur.name, maxLength: 40, ariaLabel: 'Название модуля' });
+  name.onchange = () => { const v = name.value.trim(); if (!v) { name.value = cur.name; return; } act(() => setModuleProps(root, active, { name: v }))(); drawModules(); };
+  const row1 = el('div', 'modrow'); row1.append(name);
+  const row2 = el('div', 'modrow');
+  if (active > 0) row2.append(field('Зазор слева, мм', cur.gap, 0, 2000, v => setModuleProps(root, active, { gap: v }), 'Расстояние до предыдущего модуля'));
+  row2.append(field('Подъём над полом, мм', cur.y, 0, 3000, v => setModuleProps(root, active, { y: v }), 'Для навесных корпусов'));
+  const acts = el('div', 'modrow acts');
+  const btn = (t, title, fn, dis) => { const b = el('button', '', t); b.title = title; b.disabled = !!dis; b.onclick = fn; acts.append(b); };
+  const moved = dir => { act(() => { active = moveModule(root, active, dir); })(); afterModuleChange(false); };
+  btn('←', 'Сдвинуть модуль влево', () => moved(-1), active === 0);
+  btn('→', 'Сдвинуть модуль вправо', () => moved(1), active === list.length - 1);
+  btn('Копия', 'Дублировать модуль', () => { act(() => { const i = duplicateModule(root, active); if (i >= 0) active = i; })(); afterModuleChange(true); }, moduleCount(root) >= 12);
+  btn('Удалить', 'Убрать модуль из проекта', () => { act(() => { removeModule(root, active); })(); afterModuleChange(true); });
+  card.append(row1, row2, acts); modsBox.append(card);
 }
 
 // ── пошаговая сборка в 3D: степпер на плашке «Вид»
 const asmBox = el('div', 'asmbox');
 function drawAsmBar() {
   asmBox.innerHTML = '';
-  if (!P.asmStep) {
+  if (!root.asmStep) {
     const b = el('button', 'asmbtn', 'Сборка по шагам'); b.title = 'Показать, как собирается изделие: деталь за деталью, текущий шаг подсвечен';
-    b.onclick = () => { P.asmStep = 1; render(false); };
+    b.onclick = () => { root.asmStep = 1; render(false); };
     asmBox.append(b); return;
   }
-  const n = asmSteps.length, s = asmSteps[P.asmStep - 1];
+  const n = asmSteps.length, s = asmSteps[root.asmStep - 1];
   if (!s) return;
   const top = el('div', 'asmrow');
   const prev = el('button', 'asmbtn', '‹'), next = el('button', 'asmbtn', '›'), off = el('button', 'asmbtn', '✕');
-  prev.disabled = P.asmStep <= 1; next.disabled = P.asmStep >= n; off.title = 'Выйти из режима сборки';
-  prev.onclick = () => { P.asmStep--; render(false); }; next.onclick = () => { P.asmStep++; render(false); }; off.onclick = () => { P.asmStep = 0; render(false); };
-  top.append(prev, el('b', '', `Шаг ${P.asmStep} из ${n}: ${s.title}`), next, off);
+  prev.disabled = root.asmStep <= 1; next.disabled = root.asmStep >= n; off.title = 'Выйти из режима сборки';
+  prev.onclick = () => { root.asmStep--; render(false); }; next.onclick = () => { root.asmStep++; render(false); }; off.onclick = () => { root.asmStep = 0; render(false); };
+  top.append(prev, el('b', '', `Шаг ${root.asmStep} из ${n}: ${s.title}`), next, off);
   asmBox.append(top, el('div', 'asmtext', s.text.join(' ')));
 }
-function drawAll() { drawSections(); drawGlobal(); }
+function drawAll() { drawModules(); drawSections(); drawGlobal(); }
 
 // ── exports
 const download = (data, name, type) => { const a = el('a'); a.href = URL.createObjectURL(new Blob([data], { type })); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); };
-const stamp = () => `${P.type}_${Math.round(spec.meta.W)}x${P.height}x${P.depth}`;
+const stamp = () => (proj.multi ? `proekt_${moduleCount(root)}mod_${Math.round(proj.spec.meta.W)}x${Math.round(proj.spec.meta.H)}x${Math.round(proj.spec.meta.D)}` : `${P.type}_${Math.round(spec.meta.W)}x${P.height}x${P.depth}`);
 // снимок 3D без рамки выбранной секции, уменьшенный до maxW (КП хранит снимок в localStorage, карточка проекта — миниатюру в IndexedDB)
 function shot(maxW) {
   const c = stage._renderer.domElement, k = Math.min(1, maxW / c.width), o = document.createElement('canvas');
@@ -802,11 +887,11 @@ const rayAt = e => {
 };
 const pickAt = e => rayAt(e).intersectObject(model, true).find(h => h.object.userData.section !== undefined || h.object.userData.part !== undefined);
 const frontY = e => {
-  const m = spec.meta, k = 1 / 1000;
+  const m = spec.meta, k = 1 / 1000, am = proj.mods[active];
   model.updateMatrixWorld(true);
-  const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -model.localToWorld(new THREE.Vector3(0, 0, (m.D / 2) * k)).z);
+  const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -model.localToWorld(new THREE.Vector3(0, 0, (am.z + m.D / 2) * k)).z);
   const pt = rayAt(e).ray.intersectPlane(plane, new THREE.Vector3());
-  return pt ? model.worldToLocal(pt).y / k : null;
+  return pt ? model.worldToLocal(pt).y / k - am.y : null;
 };
 let drag = null;
 const dragItem = d => P.sections[d.sec].items[d.i];
@@ -814,7 +899,7 @@ const shelfOpts = alt => ({ t: P.thickness, ih: spec.meta.ih, step: alt ? 0 : 32
 stage.addEventListener('pointerdown', e => {
   if (e.button !== 0 || !selPartKey) return;
   const hit = pickAt(e), p = hit && hit.object.userData.part !== undefined ? spec.parts[hit.object.userData.part] : null;
-  if (!p || p.item === undefined || partIdOf(p) !== selPartKey) return;
+  if (!p || p.item === undefined || partIdOf(p) !== selPartKey || (hit.object.userData.mod || 0) !== active) return;
   const y0 = frontY(e);
   if (y0 === null) return;
   drag = { sec: p.sec - 1, i: p.item, y0, base: dragItem({ sec: p.sec - 1, i: p.item }).y, moved: false };
@@ -840,10 +925,11 @@ let down;
 stage.addEventListener('pointerdown', e => (down = [e.clientX, e.clientY]));
 stage.addEventListener('pointerup', e => {
   if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4) return;
-  const hit = pickAt(e);
-  const pi = hit && hit.object.userData.part;
+  const hit = pickAt(e), mi = hit ? hit.object.userData.mod || 0 : active;
+  const pi = hit && hit.object.userData.part, sc = hit && hit.object.userData.section;
+  if (mi !== active) { active = mi; P = cabinetOf(root, mi); sel = 0; kinKey = ''; drawAll(); render(false); }
   selPartKey = pi !== undefined && spec.parts[pi] ? partIdOf(spec.parts[pi]) : null;
-  if (hit && hit.object.userData.section !== undefined) select(hit.object.userData.section); else highlight();
+  if (sc !== undefined) select(sc); else highlight();
 });
 
 // ── диалоги
@@ -892,7 +978,7 @@ document.getElementById('xmenu').onclick = e => toggleMenu(xm, e);
 function openProject(id, skipSave) {
   if (!skipSave) { saveThumbNow(); save(); }
   cur = id; if (!placeholder) saveProjects(db, cur);
-  P = normalize(db[id].P); P.asmStep = 0; hist.length = 0; redoSt.length = 0; editing = null; sel = 0; kinKey = ''; fixNote = null;
+  root = normalize(db[id].P); root.asmStep = 0; active = 0; P = root; selPartKey = null; hist.length = 0; redoSt.length = 0; editing = null; sel = 0; kinKey = ''; fixNote = null;
   if (projDlg.open) projDlg.close();
   drawAll(); render(true); syncUndo();
 }
@@ -914,7 +1000,7 @@ const PM = {
   async saveas(id = cur) { if (id === cur) save(); const n = await askText('Дублировать проект', uniqueName(db, db[id].name)); if (n) addProject(n, JSON.parse(JSON.stringify(db[id].P))); },
   share(id = cur) { account && account.openShare(id); },
   versions(id = cur) { account && account.openVersions(id); },
-  reset() { snap(); P = makePreset(P.type, keepColors()); sel = 0; drawAll(); render(true); },
+  reset() { snap(); resetActive(); sel = 0; drawAll(); render(true); },
   export(id = cur) { if (id === cur) save(); download(projectFile(db, id), fileName(id), 'application/json'); },
   async del(id = cur) {
     const b = el('div', 'dbody'); b.append(el('p', '', `Проект «${db[id].name}» будет удалён без возможности восстановления.`));

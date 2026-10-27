@@ -37,3 +37,19 @@ describe('размерные линии', () => {
     expect(dimensions(spec, P, 0).find(x => x.id === 'H').value).toBe(Math.round(spec.meta.H));
   });
 });
+
+import { buildProject, addModule } from '../web/project.js';
+describe('размеры в проекте из нескольких модулей', () => {
+  const r = makePreset('wardrobe'); addModule(r, makePreset('dresser'), { gap: 40, y: 0 });
+  const pr = buildProject(r), m = pr.mods[1];
+  it('точки сдвигаются вместе с модулем', () => {
+    const own = dimensions(m.spec, m.P, 0), shifted = dimensions(m.spec, m.P, 0, { off: [m.x, m.y, m.z] });
+    own.forEach((d, i) => { for (let k = 0; k < 3; k++) { expect(shifted[i].a[k]).toBeCloseTo(d.a[k] + [m.x, m.y, m.z][k], 6); expect(shifted[i].b[k]).toBeCloseTo(d.b[k] + [m.x, m.y, m.z][k], 6); } expect(shifted[i].value).toBe(d.value); });
+  });
+  it('общая ширина проекта добавляется отдельной нередактируемой линией', () => {
+    const d = dimensions(m.spec, m.P, 0, { total: pr.spec.meta }), pw = d.find(x => x.id === 'PW');
+    expect(pw.value).toBe(Math.round(pr.spec.meta.W)); expect(pw.edit).toBeNull();
+    expect(pw.a[0]).toBeCloseTo(-pr.spec.meta.W / 2, 6);
+    expect(dimensions(m.spec, m.P, 0).some(x => x.id === 'PW')).toBe(false);
+  });
+});

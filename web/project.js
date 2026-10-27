@@ -123,7 +123,7 @@ function placed(spec, i, d) {
 export function buildProject(root, { hwFor } = {}) {
   const list = moduleList(root);
   const mods = list.map(m => ({ ...m, spec: buildSpec(m.P, hwFor ? { hw: hwFor(m.P) } : {}) }));
-  if (mods.length === 1) { const m = mods[0]; return { mods: [{ ...m, x: 0, z: 0, W: m.spec.meta.W, H: m.spec.meta.H, D: m.spec.meta.D }], spec: m.spec, multi: false }; }
+  if (mods.length === 1) { const m = mods[0]; return { mods: [{ ...m, x: 0, y: 0, z: 0, W: m.spec.meta.W, H: m.spec.meta.H, D: m.spec.meta.D }], spec: m.spec, multi: false }; }
 
   let left = 0;
   mods.forEach((m, k) => { left += k ? m.gap : 0; m.left = left; m.W = m.spec.meta.W; m.H = m.spec.meta.H; m.D = m.spec.meta.D; left += m.W; });

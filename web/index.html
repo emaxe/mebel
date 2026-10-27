@@ -59,6 +59,19 @@
   .dimlabels button:hover{border-color:#6b5a45}
   .dimlabels button.gap{color:#2a6fd4;border-color:#b5cdf0;pointer-events:none;cursor:default}
   .dimlabels input{width:54px;font:inherit;border:0;outline:0;background:transparent;text-align:center;padding:0}
+  .mods{margin-bottom:10px}
+  .modstrip{display:flex;flex-wrap:wrap;gap:6px}
+  .modchip{border:1px solid #d9d4ca;background:#fff;border-radius:16px;padding:4px 12px;font:inherit;font-size:12.5px;cursor:pointer;color:#3a362f;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .modchip.on{background:#22211e;color:#faf9f6;border-color:#22211e}
+  .modchip.add{border-style:dashed;color:#6f6a60}
+  .modchip:disabled{opacity:.5;cursor:default}
+  .modcard{margin-top:8px;border:1px solid #e6e2da;border-radius:8px;padding:8px 10px;background:#fbfaf7;display:flex;flex-direction:column;gap:6px}
+  .modrow{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .modrow label{display:flex;flex-direction:column;gap:2px;font-size:11px;color:#6f6a60}
+  .modrow input{font:inherit;font-size:12.5px;padding:3px 6px;border:1px solid #d8d2c6;border-radius:4px;background:#fff;width:96px}
+  .modrow .modname{width:100%;font-weight:600}
+  .modrow.acts button{border:1px solid #d9d4ca;background:#fff;border-radius:6px;padding:4px 10px;font:inherit;font-size:12px;cursor:pointer}
+  .modrow.acts button:disabled{opacity:.4;cursor:default}
   .partcard{position:absolute;top:12px;right:12px;z-index:5;width:250px;max-height:60%;overflow:auto;background:rgba(255,255,255,.96);border:1px solid #d9d4ca;border-radius:10px;padding:10px 12px;font-size:12px;box-shadow:0 2px 10px rgba(0,0,0,.08)}
   .partcard[hidden]{display:none}
   .partcard .pc-head{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:6px;font-size:13px}
@@ -276,6 +289,7 @@
   <aside id="panel">
     <div class="handle" id="handle" role="button" aria-label="Потянуть вверх или вниз, чтобы раскрыть панель"><i></i></div>
     <nav class="tabs" id="tabs" role="tablist"><button data-go="sections" role="tab">Секции</button><button data-go="params" role="tab">Параметры</button></nav>
+    <div class="mods" id="mods"></div>
     <div class="warn" id="warn" style="display:none"></div>
     <div data-tab="sections">
       <h2>Секции</h2>
