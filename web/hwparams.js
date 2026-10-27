@@ -8,10 +8,12 @@ export const HW_DEFAULTS = {
   hinge: { cupD: 35, cupDepth: 13, cupEdge: 21.5, endOffset: 100, plateSetback: 37, plateSpacing: 32, plateD: 5, plateDepth: 12, loadKg: 7 },
   // направляющие по типам: gap — зазор короба с двух сторон, tr — ход (доля длины), lens — длины, mount* — отверстия на опоре
   slide: {
-    ball: { name: 'шариковые', rail: 'three', gap: 26, tr: 0.95, lens: rng(250, 650, 50), mountFront: 37, mountMid: 0, mountRear: 37, mountY: 37, holeD: 5, holeDepth: 12, maxKg: 30 },
-    ballSoft: { name: 'шариковые с доводчиком', rail: 'three', gap: 26, tr: 0.95, lens: rng(250, 650, 50), mountFront: 37, mountMid: 0, mountRear: 37, mountY: 37, holeD: 5, holeDepth: 12, maxKg: 30 },
+    ball: { name: 'шариковые', rail: 'three', gap: 26, tr: 0.95, lens: rng(250, 600, 50), mountFront: 37, mountMid: 0, mountRear: 37, mountY: 37, holeD: 5, holeDepth: 12, maxKg: 30 },
+    ballSoft: { name: 'шариковые с доводчиком', rail: 'three', gap: 26, tr: 0.95, lens: rng(250, 600, 50), mountFront: 37, mountMid: 0, mountRear: 37, mountY: 37, holeD: 5, holeDepth: 12, maxKg: 30 },
     roller: { name: 'роликовые', rail: 'side', gap: 25, tr: 0.75, lens: rng(250, 500, 50), mountFront: 37, mountMid: 0, mountRear: 37, mountY: 37, holeD: 5, holeDepth: 12, maxKg: 20 },
     hidden: { name: 'скрытые полного выдвижения с доводчиком', rail: 'under', gap: 42, tr: 1, lens: [270, 300, 350, 400, 450, 500, 550, 600], mountFront: 37, mountMid: 197, mountRear: 37, mountY: 0, holeD: 5, holeDepth: 12, maxKg: 30 },
+    tandem: { name: 'скрытые Blum TANDEM (19 мм)', rail: 'under', gap: 49, tr: 1, lens: [270, 300, 350, 400, 450, 500, 550, 600], mountFront: 37, mountMid: 197, mountRear: 37, mountY: 0, holeD: 5, holeDepth: 12, maxKg: 30 },
+    quadro: { name: 'скрытые Hettich Quadro V6', rail: 'under', gap: 42, tr: 1, lens: [270, 300, 350, 400, 450, 500, 550, 600], mountFront: 37, mountMid: 197, mountRear: 37, mountY: 0, holeD: 5, holeDepth: 12, maxKg: 30 },
   },
   pin: { offset: 37, pitch: 32, d: 5, depth: 12 },
   kupe: { loadKg: 40 },

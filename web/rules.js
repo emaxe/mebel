@@ -11,7 +11,7 @@ export const innerH = P => P.height - (P.base === 'none' ? 0 : P.plinth) - 2 * P
 const ZONE_ITEMS = ['shelf', 'fixed', 'glass']; // в колонках зоны только полки
 const ALL_ITEMS = ['shelf', 'fixed', 'glass', 'rod', 'drawer', 'idrawer'];
 export const TYPE_RULES = {
-  wardrobe: { height: [1600, 2800], depth: [450, 800], secW: [300, 1200], maxSec: 8, zone: true, doors: ['none', 'left', 'right', 'double'], sliding: true, mezz: true, cornice: true, items: ALL_ITEMS, drawerFronts: 'inset', fills: ['shelves', 'rod', 'rodShelves', 'rod2', 'drawers', 'drawersShelves', 'idrawers', 'empty'] },
+  wardrobe: { acc: true, height: [1600, 2800], depth: [450, 800], secW: [300, 1200], maxSec: 8, zone: true, doors: ['none', 'left', 'right', 'double'], sliding: true, mezz: true, cornice: true, items: ALL_ITEMS, drawerFronts: 'inset', fills: ['shelves', 'rod', 'rodShelves', 'rod2', 'drawers', 'drawersShelves', 'idrawers', 'empty'] },
   rack: { height: [600, 2600], depth: [250, 500], secW: [300, 1000], maxSec: 8, zone: true, doors: [], items: ['shelf', 'fixed', 'glass'], drawerFronts: 'inset', fills: ['shelves', 'empty'] },
   nightstand: { height: [400, 800], depth: [300, 550], secW: [300, 800], maxSec: 2, doors: ['none', 'left', 'right', 'flapDown'], items: ['shelf', 'fixed', 'glass', 'drawer', 'idrawer'], drawerFronts: 'overlay', fills: ['drawers2', 'drawers3', 'drawersShelf', 'idrawers', 'shelves', 'empty'] },
   dresser: { height: [600, 1300], depth: [350, 600], secW: [300, 1000], maxSec: 4, zone: true, doors: ['none', 'left', 'right', 'double'], items: ['shelf', 'fixed', 'drawer', 'idrawer'], drawerFronts: 'overlay', fills: ['drawers3', 'drawers4', 'drawers5', 'drawersShelf', 'idrawers', 'shelves', 'empty'] },
@@ -117,6 +117,7 @@ export function roundSideEnds(P, r) {
 /** Bring a project to what its type supports: ranges, doors, antresol, items, front mode. Idempotent. */
 import { normalizeWorktop } from './worktop.js';
 import { normalizeRoom } from './room.js';
+import { ACC_KEYS } from './norms.js';
 export const SCHEMA = 3;
 const MIGRATIONS = [P => P, P => P, P => P];
 export const MAX_MODULES = 12;
@@ -163,9 +164,10 @@ export function normalize(P) {
   if (P.fitMode !== 'even') P.fitMode = 'prop';
   if (!['confirmat', 'minifix', 'dowel'].includes(P.joint)) P.joint = 'confirmat';
   if (!R.sliding) P.doorType = 'hinged';
-  if (!['ball', 'ballSoft', 'hidden', 'roller'].includes(P.slide)) P.slide = 'ball';
+  if (!['ball', 'ballSoft', 'hidden', 'tandem', 'quadro', 'roller'].includes(P.slide)) P.slide = 'ball';
   if (!['soft', 'plain', 'wide'].includes(P.hinge)) P.hinge = 'soft';
   P.wallFix = !!P.wallFix;
+  if (P.grid32) P.grid32 = true; else delete P.grid32;
   P.cutouts = normalizeCutouts(P.cutouts);
   if (!P.fittings || typeof P.fittings !== 'object' || Array.isArray(P.fittings)) P.fittings = {};
   P.push = !!P.push && P.handle === 'none'; // push-to-open работает только без ручек
@@ -184,6 +186,7 @@ export function normalize(P) {
     if (!P.overrides.length) delete P.overrides;
   }
   if (!P.plinthStrip || P.base !== 'legs') delete P.plinthStrip; else P.plinthStrip = true;
+  P.rodLoad = clamp(Number.isFinite(+P.rodLoad) ? Math.round(+P.rodLoad) : 20, 5, 60);
   P.shelfLoad = clamp(Number.isFinite(+P.shelfLoad) ? Math.round(+P.shelfLoad) : 80, 20, 250);
   if (P.type === 'kcorner') { P.wingB = clamp(Number.isFinite(+P.wingB) ? Math.round(+P.wingB) : 900, 600, 1500); P.cornerSide = P.cornerSide === 'right' ? 'right' : 'left'; } else { delete P.wingB; delete P.cornerSide; }
   P.railW = clamp(Number.isFinite(+P.railW) ? Math.round(+P.railW) : 100, 60, 200);
@@ -196,6 +199,7 @@ export function normalize(P) {
     if (!R.doors.includes(s.door)) s.door = 'none';
     s.split = R.mezz && s.split > 0 ? clamp(s.split, 250, Math.max(250, ih - 300)) : 0;
     s.items = (s.items || []).filter(it => R.items.includes(it.type));
+    if (R.acc && Array.isArray(s.acc)) { s.acc = [...new Set(s.acc)].filter(k => ACC_KEYS.includes(k)).slice(0, ACC_KEYS.length); if (!s.acc.length) delete s.acc; } else delete s.acc;
     if (s.drawerFronts !== 'inset' && s.drawerFronts !== 'overlay') s.drawerFronts = R.drawerFronts;
     if (s.door === 'flapDown' || s.door === 'flapUp') s.drawerFronts = 'inset'; // a flap has no flat row of drawers under it
     const top = Math.max(0, ...s.items.filter(it => it.type === 'drawer').map(it => it.y + it.h)); // visible drawers only

@@ -9,6 +9,7 @@ import { sheetFor, isTextured } from './catalog.js';
 import { estimate } from './estimate.js';
 import { frontView, sideView } from './drawings.js';
 import { checkBuild } from './check.js';
+import { unverifiedProject } from './verify.js';
 import { assemblySteps } from './assembly.js';
 import { axoView } from './axo.js';
 import { shoppingList, resolveHw, KIND_LABELS } from './fittings.js';
@@ -33,7 +34,7 @@ export const shopUnit = l => (l.unit === 'уп.' ? `${l.packs} уп. × ${l.pack
  * baseHref — для разбора ссылок; date — дата в шапках. Возвращает { html, spec, title, stamp, shop, rub }.
  */
 export function renderProduction({ P, cat, projName, preview = null, shareToken = '', bought = new Set(), baseHref = 'http://localhost/', date = new Date() }) {
-  const HW = resolveHw(cat, P), PJ = buildProject(P, { hwFor: p => resolveHw(cat, p) }), spec = PJ.spec, mods = PJ.mods, multi = PJ.multi, G = groupParts(spec), E = edgeSummary(G);
+  const HW = resolveHw(cat, P), PJ = buildProject(P, { hwFor: p => resolveHw(cat, p) }), spec = PJ.spec, mods = PJ.mods, multi = PJ.multi, G = groupParts(spec), E = edgeSummary(G), UV = unverifiedProject(P, mods.map(m => m.name));
   const NEST = { sheetFor: (l, T) => sheetFor(cat, l, T), textured: l => isTextured(cat, l), kerf: cat.cut.kerf, trim: cat.cut.trim, minOffcut: cat.cut.minOffcut, stock: cat.stock };
   const N = nest(G, NEST);
   const EST = estimate(spec, G, N, E, cat, P);
@@ -70,7 +71,7 @@ export function renderProduction({ P, cat, projName, preview = null, shareToken 
   <div><span>Кромка</span>лицевая ${fmt(P.edgeFront)} мм, скрытая ${P.edgeHidden ? fmt(P.edgeHidden) + ' мм' : 'нет'}</div>
   <div><span>Задняя стенка</span>${{ groove: 'ХДФ 4 мм в паз', overlay: 'ХДФ 4 мм накладная', none: 'нет' }[P.backType]}</div>`}
   <div><span>Деталей</span>${G.reduce((a, g) => a + g.qty, 0)} шт., ${G.length} позиций</div>
-  </div></section>`;
+  </div>${UV.length ? `<div class="warn" data-unverified="1"><b>Не подтверждено источниками</b> — перед заказом фурнитуры сверьте с каталогом производителя:<ul>${UV.map(u => `<li>${esc(u.what)}${multi && u.modules.length ? ` <span class="muted">(${esc(u.modules.join(', '))})</span>` : ''}</li>`).join('')}</ul></div>` : ''}</section>`;
 
   html += `<section id="sec-views" class="sheet m-task"><h2>Общий вид</h2>${mods.map(m => `${multi ? `<h3>${esc(m.name)}</h3>` : ''}<div class="views">${frontView(m.spec, m.P)}${frontView(m.spec, m.P, { fronts: true })}${sideView(m.spec, m.P)}</div>`).join('')}</section>`;
 

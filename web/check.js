@@ -1,7 +1,7 @@
 // Проверка собираемости: деталь за деталью, отверстие за отверстием, этап за этапом. Без DOM: работает в node (тесты) и в браузере.
 // checkBuild(spec, P, { N, skipKin }) → [{ level: 'error' | 'warn', code, text, parts }]. N — результат nest() (необязателен: проверка «лист вмещает деталь»), skipKin — не считать кинематику (её показывает своя панель).
 import { dims, closedOverlaps, kinProblems } from './kinematics.js';
-import { shelfDeflection, maxShelfSpan, DEFAULT_LOAD, SAG_DIV } from './norms.js';
+import { shelfDeflection, maxShelfSpan, DEFAULT_LOAD, SAG_DIV, screwLayers, warpRatio, warpLimit, hangerDepth, HANGER_MIN_DEPTH, ACCESSORIES, rodDeflection, maxRodSpan, DEFAULT_ROD_LOAD } from './norms.js';
 import { STAGES } from './model.js';
 import { hingeCount, defaultHw } from './hwparams.js';
 
@@ -220,6 +220,12 @@ export function checkBuild(spec, P, opts = {}) {
     if (p.name === 'Полка стеклянная' && p.L > 600) add('warn', 'sag', `${nm(p)}: стекло 6 мм с пролётом ${Math.round(p.L)} мм (больше 600) прогнётся под нагрузкой: нужна опора или толще`, [p]);
     if (p.name === 'Фасад двери' && p.L > 600) add('warn', 'wide-door', `${nm(p)}: дверь шире 600 мм (${Math.round(p.L)}), будет провисать на петлях`, [p]);
   }
+  const rodLoad = P.rodLoad || DEFAULT_ROD_LOAD, rodSpan = maxRodSpan(rodLoad);
+  for (const e of extras) {
+    if (e.name !== 'Штанга' || !(e.len > rodSpan)) continue;
+    const d = rodDeflection({ L: e.len, load: rodLoad });
+    add('warn', 'rod-sag', `Секция ${e.sec}: штанга длиной ${Math.round(e.len)} мм при нагрузке ${rodLoad} кг/м прогнётся на ${d.toFixed(1).replace('.', ',')} мм (допустимо ${(e.len / SAG_DIV).toFixed(1).replace('.', ',')}): поставьте среднюю опору или уменьшите секцию`);
+  }
   // фасады: рамка, зазоры, вес
   for (const d of doors) {
     if (d.mill && Math.min(...d.mill.window) < 60) add('error', 'frame', `${nm(d)}: рамочный фасад ${Math.round(d.L)}×${Math.round(d.W)} мм: рамка ${d.mill.frameW} мм оставляет окно ${Math.round(Math.min(...d.mill.window))} мм (нужно от 60), сделайте фасад шире или гладкий`, [d]);
@@ -261,6 +267,33 @@ export function checkBuild(spec, P, opts = {}) {
   }
   if (spec.meta.H >= 1200 && !P.wallFix) add('warn', 'tip', `Изделие высотой ${Math.round(spec.meta.H)} мм без крепления к стене может опрокинуться: включите «Крепление к стене»`);
 
+  // длина саморезов, коробление высоких фасадов и глубина под плечики
+  for (const [name] of spec.hw) {
+    const m = /^Саморез ([\d,]+)×(\d+) \((.+)\)$/.exec(name), layers = m && screwLayers(m[3], P);
+    if (!layers) continue;
+    const sum = layers.reduce((a, b) => a + b, 0);
+    if (+m[2] > sum) add('warn', 'screw-len', `${name}: саморез ${m[2]} мм длиннее, чем толщина ${sum} мм: выйдет с обратной стороны (подойдёт не длиннее ${sum - 2} мм)`);
+  }
+  const warped = new Set();
+  for (const p of parts) {
+    if ((p.name !== 'Фасад двери' && p.name !== 'Фасад откидной') || p.mat !== 'front') continue;
+    const h = Math.max(p.L, p.W), r = warpRatio(h, p.T), key = `${Math.round(h)}:${p.T}:${p.label}`;
+    if (r > warpLimit(p.label) && !warped.has(key)) { warped.add(key); add('warn', 'warp', `${nm(p)}: высота ${Math.round(h)} мм при толщине ${p.T} мм (${Math.round(r)}:1) — возможно коробление; разделите фасад на два или возьмите толще`, [p]); }
+  }
+  P.sections.forEach((s, i) => {
+    if (!(s.items || []).some(it => it.type === 'rod')) return;
+    const d = hangerDepth(P);
+    if (d < HANGER_MIN_DEPTH) add('warn', 'hanger-depth', `Секция ${i + 1}: свободная глубина под штангу ${Math.round(d)} мм меньше ${HANGER_MIN_DEPTH} мм: плечики шириной до 450 мм не поместятся поперёк`);
+  });
+
+  P.sections.forEach((s, i) => {
+    for (const k of s.acc || []) {
+      const a = ACCESSORIES[k], d = hangerDepth(P), h = P.height - (P.base === 'none' ? 0 : P.plinth) - 2 * P.thickness;
+      if (s.width < a.minW) add('warn', 'acc', `Секция ${i + 1}: ${a.label.toLowerCase()} требует ширины не меньше ${a.minW} мм, а в секции ${s.width} мм`);
+      if (d < a.minD) add('warn', 'acc', `Секция ${i + 1}: ${a.label.toLowerCase()} требует глубины не меньше ${a.minD} мм, свободно ${Math.round(d)} мм`);
+      if (h < a.minH) add('warn', 'acc', `Секция ${i + 1}: ${a.label.toLowerCase()} требует высоты не меньше ${a.minH} мм, внутри ${Math.round(h)} мм`);
+    }
+  });
   // вырезы: внутри детали, не ближе 10 мм к краю, не задевают присадку, не пересекаются
   for (const p of parts) {
     const cs = p.cutouts || [];

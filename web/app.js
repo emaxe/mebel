@@ -15,6 +15,8 @@ import { orientLines, edgeNames, machiningRows } from './partinfo.js';
 import { autoFixAsync, kinProblems } from './autofix.js';
 import { MIN_DRAWER_H, FILL_LABELS, rulesOf, makePreset, normalize, fillItems, innerH, autoShelves, stepShelves, fitWidth, totalWidth, sectionOfMessage, moveItem, autoDrawers, packDrawers, moveDivider, moveZoneSplit, roundSideEnds, redistribute, fitSections, clamp, asCell, MAX_CELL_DEPTH } from './rules.js';
 import { zonesOf } from './cells.js';
+import { ACC_KEYS, ACCESSORIES } from './norms.js';
+import { unverifiedProject } from './verify.js';
 import { TEMPLATES, libraryEntry, instantiate, MAX_LIBRARY } from './library.js';
 import { loadCatalog, saveCatalog, sanitizeCatalog, sheetFor, isTextured, DEFAULT_CATALOG, CATALOG_KEY, catalogHooks } from './catalog.js';
 import { loadProjects, saveProjects, newId, uniqueName, projectFile, parseProjectFile, hooks, PROJECTS_KEY, CURRENT_KEY, LEGACY_KEY, NAME_KEY } from './projects.js';
@@ -363,6 +365,15 @@ function control(c, obj, onChange) {
 }
 
 // ── вырезы в деталях: список карточек, правка по индексу (после render список пересоздаётся нормализацией)
+// допущения расчёта, которые не подтверждены источниками: перед заказом фурнитуры сверить с каталогом производителя
+function unverifiedBox() {
+  const box = el('div', 'cutbox'), list = unverifiedProject(root, moduleList(root).map(m => m.name));
+  box.append(el('div', 'hint2', list.length ? 'Подтверждено не менее чем двумя источниками: чашка петли Ø35×13, планка 37 мм с шагом 32, шариковые направляющие, ширина короба на MOVENTO, TANDEM и Quadro, сетка 32. Остальное в этом проекте принято по общей практике или оценено:' : 'В этом проекте нет допущений, не подтверждённых источниками.'));
+  const ul = el('ul', 'unv');
+  for (const u of list) ul.append(el('li', '', u.what + (u.modules.length > 1 || moduleCount(root) > 1 ? ` (${u.modules.join(', ')})` : '')));
+  box.append(ul);
+  return box;
+}
 function overridesEditor() {
   const box = el('div', 'cutbox');
   const names = () => [...new Set((spec ? spec.parts : []).filter(p => (p.mat === 'body' || p.mat === 'front') && /^ЛДСП/.test(p.label)).map(p => p.name))];
@@ -486,6 +497,7 @@ const globalDefs = () => {
       { k: 'joint', l: 'Крепёж корпуса', seg: [['confirmat', 'Конфирмат'], ['minifix', 'Эксцентрик'], ['dowel', 'Шкант']], hint: 'Конфирмат — стяжка 7×50, шляпка видна на боковинах. Эксцентрик (минификс) — штифт + стяжка Ø15, снаружи отверстий нет, плюс шкант для точности. Шкант — только шканты Ø8 (на клей).' },
       { k: 'topType', l: 'Крышка', seg: [['inset', 'Между боковинами'], ['overlay', 'Накладная'], ...(r.rails ? [['rails', 'Царги']] : [])], hint: 'Между боковинами — крышка встаёт между боковин, торцы боковин не видны сверху. Накладная — лежит сверху и может выступать (свес).' },
       { k: 'shelfLoad', l: 'Нагрузка на полки', min: 20, max: 250, step: 10, u: 'кг/м²', hint: 'Расчётная нагрузка полок для проверки прогиба: 40 — лёгкие вещи, 80 — книги и посуда, 150 — тяжёлые книги. Допустимый прогиб — пролёт/250.' },
+      { k: 'rodLoad', l: 'Нагрузка на штангу', min: 5, max: 60, step: 5, u: 'кг/м', hint: 'Расчётная нагрузка штанги для проверки прогиба трубы Ø25 (стенка 1 мм): 10 — лёгкая одежда, 20 — плечики с верхней одеждой, 40 — шубы.' },
       { k: 'wingB', l: 'Длина крыла B', min: 600, max: 1500, step: 10, u: 'мм', when: () => P.type === 'kcorner', hint: 'Длина второго крыла вдоль соседней стены. Длина крыла A — «Общая ширина».' },
       { k: 'cornerSide', l: 'Угол', seg: [['left', 'Слева'], ['right', 'Справа']], when: () => P.type === 'kcorner', hint: 'С какой стороны стена второго крыла.' },
       { k: 'plinthStrip', l: 'Цокольная планка', tog: 1, when: () => P.base === 'legs', hint: 'Планка на клипсах между ножками, утоплена на 50 мм от фасада.' },
@@ -508,12 +520,14 @@ const globalDefs = () => {
       { k: 'handleOrient', l: 'Ручки на дверях', seg: [['v', 'Вертикально'], ['h', 'Горизонтально']], when: () => hasHingedDoors() && P.handle !== 'none' && P.handle !== 'knob', hint: 'Направление скобы или профиля на распашных дверях. На ящиках ручки всегда горизонтальные.' },
     ], hasMoving],
     ['Фурнитура', [
-      { k: 'slide', l: 'Направляющие ящиков', seg: [['ball', 'Шариковые'], ['ballSoft', 'С доводчиком'], ['hidden', 'Скрытые'], ['roller', 'Роликовые']], when: hasDrawers, hint: 'Скрытые полного выдвижения: короб уже на 42 мм, ход 100%. Роликовые: проще и дешевле, ход 75%. С доводчиком: плавное закрывание.' },
+      { k: 'slide', l: 'Направляющие ящиков', seg: [['ball', 'Шариковые'], ['ballSoft', 'С доводчиком'], ['hidden', 'Скрытые (MOVENTO)'], ['tandem', 'Blum TANDEM'], ['quadro', 'Hettich Quadro'], ['roller', 'Роликовые']], when: hasDrawers, hint: 'Скрытые полного выдвижения: короб уже на 42 мм (MOVENTO, Quadro) или на 49 мм (TANDEM для плиты 19 мм), ход 100%. Подтверждены источниками: шариковые, MOVENTO, TANDEM, Quadro (ширина короба); остальное см. «Не подтверждено источниками». Роликовые: проще и дешевле, ход 75%. С доводчиком: плавное закрывание.' },
       { k: 'hinge', l: 'Петли', seg: [['soft', '110° с доводчиком'], ['plain', '110° без'], ['wide', '165°']], when: hasHingedDoors, hint: '165° открывают дверь почти до боковины; соседняя дверь может мешать, предупреждения покажут.' },
       { k: 'push', l: 'Push-to-open', tog: 1, when: () => P.handle === 'none' && hasMoving(), hint: 'Открывание нажатием: на двери ставится толкатель, ящики идут на направляющих push-to-open; петли без доводчика.' },
+      { k: 'grid32', l: 'Сетка 32 мм по боковинам', tog: 1, hint: 'Два ряда отверстий Ø5 с шагом 32 мм по всей высоте боковин и перегородок: полки можно переставлять. Отверстия, которые попадают на другой крепёж, пропускаются.' },
       { k: 'wallFix', l: 'Крепление к стене', tog: 1, hint: 'Анкерные уголки сзади под крышкой: высокое изделие не опрокинется.' },
       ...fittingRows(),
     ]],
+    ['Не подтверждено источниками', [{ custom: unverifiedBox }]],
     ['Декор деталей', [{ custom: overridesEditor }]],
     ['Вырезы', [{ custom: cutoutsEditor }]],
     ['Кромка', [
@@ -639,6 +653,17 @@ function zoneControls(card, s, H, cell = s, width = s.width, label = '', depth =
   }
 }
 
+// аксессуары секции шкафа: пантограф, выдвижная штанга, брючница, обувница
+function accControls(card, s) {
+  const virt = {};
+  for (const k of ACC_KEYS) Object.defineProperty(virt, k, { enumerable: true, get: () => (s.acc || []).includes(k), set: v => { const set = new Set(s.acc || []); if (v) set.add(k); else set.delete(k); s.acc = [...set]; if (!s.acc.length) delete s.acc; } });
+  card.append(el('div', 'sub', 'Аксессуары'));
+  for (const k of ACC_KEYS) {
+    const a = ACCESSORIES[k];
+    card.append(control({ k, l: a.label, tog: 1, hint: `В спецификацию попадает одна штука. Предупреждение, если внутри секции меньше ${a.minW} мм по ширине, ${a.minD} мм по глубине или ${a.minH} мм по высоте (ориентир, у конкретной модели пределы свои).` }, virt, () => { drawSections(); render(false); }));
+  }
+}
+
 function drawSections() {
   const r = R(), box = document.getElementById('secs'); box.innerHTML = '';
   const strip = el('div', 'strip');
@@ -674,6 +699,7 @@ function drawSections() {
   card.append(control({ k: 'split', l: 'Высота антресоли', min: 250, max: Math.max(250, H - 300), step: 10, u: 'мм', when: () => r.mezz && hinged() && s.split > 0, hint: 'Высота верхней зоны с отдельной дверью.' }, s, ch));
 
   if (r.zone) zoneControls(card, s, H);
+  if (r.acc) accControls(card, s);
 
   const row = el('div', 'secrow'); row.append(scheme(s, H));
   const col = el('div', 'fillcol'); col.append(el('div', 'sub', 'Наполнение'));
@@ -1299,7 +1325,7 @@ function drawNewProject() {
 
 // ── справочник и цены
 // варианты моделей (hwparams.js / fittings.js variantOf): по ним проект выбирает модель; свободный текст приводил к тихим промахам
-const VARIANT_OPTS = [['', '— без варианта'], ...['soft', 'plain', 'wide', 'half-soft', 'half-plain', 'half-wide', 'flap', 'ball', 'ballSoft', 'hidden', 'roller', 'push', 'bar', 'knob', 'profile', 'glass', 'top', 'bottom', 'v', 'h'].map(v => [v, v])];
+const VARIANT_OPTS = [['', '— без варианта'], ...['soft', 'plain', 'wide', 'half-soft', 'half-plain', 'half-wide', 'flap', 'ball', 'ballSoft', 'hidden', 'tandem', 'quadro', 'roller', 'push', 'bar', 'knob', 'profile', 'glass', 'top', 'bottom', 'v', 'h'].map(v => [v, v])];
 function openCatalog() {
   let c = JSON.parse(JSON.stringify(cat));
   const body = el('div', 'dbody catbox');

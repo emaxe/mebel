@@ -5,6 +5,7 @@ import { addFronts } from './model-fronts.js';
 import { defaultHw } from './hwparams.js';
 import { buildCorner } from './model-corner.js';
 import { asCell } from './cells.js';
+import { ACCESSORIES } from './norms.js';
 
 /** Порядок этапов сборки; asm у детали и у extra — ключ этапа. */
 export const STAGES = ['base', 'carcass', 'dividers', 'fixed', 'back', 'top', 'backOverlay', 'cornice', 'shelves', 'rods', 'drawerBox', 'drawers', 'doors', 'flaps', 'handles', 'kupe', 'final'];
@@ -363,11 +364,38 @@ export function buildSpec(P, opts = {}) {
     x0 += iw + t;
   });
 
+  if (P.grid32) {
+    // сквозная сетка системы 32: два ряда отверстий Ø5 с шагом 32 по внутренним граням боковин и перегородок; фаза совпадает с полками, поставленными по шагу 32
+    const zs = [shelfFront - pin.offset, shelfBack + pin.offset];
+    at('shelves', () => bounds.forEach((bd, bi) => {
+      const faces = bi === 0 ? ['B'] : bi === bounds.length - 1 ? ['A'] : ['A', 'B'];
+      let added = 0;
+      for (let y = yB + 27; y <= yT - 10; y += pin.pitch) for (const z of zs) for (const f of faces) {
+        const u = y - bd.y0, v = z - bd.z0;
+        if (u < 10 || u > bd.p.L - 10 || v < 10 || v > bd.p.W - 10) continue;
+        if (bd.p.holes.some(h => (h.f === 'A' || h.f === 'B') && h.f === f && Math.hypot(h.u - u, h.v - v) < 9)) continue;
+        hole(bd.p, f, u, v, pin.d, pin.depth, 'сетка 32'); added++;
+      }
+      if (added) bd.p.notes.push('сквозная сетка 32 мм: отверстия Ø5 по двум рядам с шагом 32 мм');
+    }));
+  }
   if (P.wallFix) {
     stage = 'final';
     if (P.type === 'kwall') { addHw('Навес кухонный регулируемый (комплект)', 2); addHw('Дюбель с шурупом 6×60 (в стену)', 2); }
     else { addHw('Анкерный уголок для крепления к стене', 2); addHw('Саморез 4×16 (уголок к корпусу)', 2); addHw('Дюбель с шурупом 6×60 (в стену)', 2); }
   }
+  // аксессуары секций: фурнитура и условное положение в 3D; пределы размеров проверяет check.js
+  S.forEach((s, i) => {
+    if (!s.acc || !s.acc.length || !s._ctx) return;
+    const c = s._ctx, sec = i + 1, zc = shelfBack + sd / 2;
+    at('rods', () => {
+      for (const k of s.acc) {
+        const a = ACCESSORIES[k], y = { pantograph: yT - 80, pullRod: yB + ih * 0.8, trouserRack: yB + ih * 0.55, shoeRack: yB + 120 }[k];
+        addHw(a.hw, 1); addHw('Саморез 4×16 (аксессуар)', 4);
+        extra({ kind: 'box', mat: 'metal', nc: true, name: a.label, s: [Math.max(40, c.iw - 60), k === 'shoeRack' ? 90 : 40, Math.min(sd - 40, 380)], c: [c.cx, y, zc], sec });
+      }
+    });
+  });
   stage = 'doors';
   const ctx = { hw: hw_, pierces, setStage: v => { stage = v; }, extra, P, S, W, H, D, t, b, ovTop, sliding, eF, eH, zF, yB, yT, ih, shelfBack, sd, parts, extras, part, hole, addHw, warnings, body };
   addFronts(ctx);

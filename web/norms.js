@@ -38,3 +38,53 @@ export const liftForce = mass => (mass * G * 0.5 * LIFT_SAFETY) / (2 * LIFT_ARM)
 
 /** Ближайший стандартный газлифт не слабее усилия force; null, если фасад тяжелее, чем держит самый мощный. */
 export const pickLift = force => LIFT_FORCES.find(f => f >= force) ?? null;
+
+// ── крепёж и фасады: технологические пределы
+/** Куда вкручивается саморез: назначение из названия «Саморез D×L (назначение)» → толщины слоёв, которые он проходит, мм. */
+export const SCREW_LAYERS = [
+  [/планка петли/, P => [P.thickness]],
+  [/крепление стабилизатора/, P => [P.thickness]],
+  [/штангодержатель/, P => [P.thickness]],
+  [/мебельные уголки/, P => [P.thickness]],
+  [/карниз/, P => [P.thickness, P.thickness]],
+];
+export const screwLayers = (purpose, P) => { const r = SCREW_LAYERS.find(([re]) => re.test(purpose)); return r ? r[1](P) : null; };
+
+/** Предельная стройность фасада (высота / толщина): выше — риск коробления. Оценка: плоский ЛДСП 150, МДФ-рамка 190. */
+export const WARP_LIMIT = { ldsp: 150, mdf: 190 };
+export const warpRatio = (h, T) => h / T;
+export const warpLimit = label => (/^МДФ/.test(label) ? WARP_LIMIT.mdf : WARP_LIMIT.ldsp);
+
+/** Свободная глубина под плечики с штангой поперёк (мм) и наименьшая, при которой стандартные плечики шириной до 450 мм помещаются. */
+export const HANGER_MIN_DEPTH = 450;
+export function hangerDepth(P) {
+  const back = P.backType === 'groove' ? 20 : P.backType === 'overlay' ? 4 : 0;
+  const front = P.doorType === 'sliding' ? 90 : P.sections.some(s => s.door && s.door !== 'none') ? P.frontT + 3 : 0;
+  return P.depth - back - front;
+}
+
+// ── аксессуары секции шкафа (s.acc): пределы по внутренним размерам; значения — ориентиры, у конкретной модели в каталоге пределы свои
+export const ACCESSORIES = {
+  pantograph: { label: 'Вешалка-пантограф', hw: 'Вешалка-пантограф (подъёмная штанга)', minW: 450, minD: 350, minH: 1200 },
+  pullRod: { label: 'Выдвижная штанга', hw: 'Выдвижная штанга (боковая)', minW: 400, minD: 350, minH: 600 },
+  trouserRack: { label: 'Брючница выдвижная', hw: 'Брючница выдвижная', minW: 400, minD: 400, minH: 300 },
+  shoeRack: { label: 'Обувница выдвижная', hw: 'Обувница выдвижная', minW: 400, minD: 350, minH: 200 },
+};
+export const ACC_KEYS = Object.keys(ACCESSORIES);
+
+// ── штанга: стальная труба на двух опорах под равномерной нагрузкой одежды
+export const E_STEEL = 200000; // МПа
+export const ROD = { D: 25, wall: 1 }; // мм: труба Ø25, стенка 1 мм (типовая штанга шкафа)
+export const DEFAULT_ROD_LOAD = 20; // кг/м: плечи с верхней одеждой
+
+/** Прогиб штанги в мм: пролёт L (мм), нагрузка loadKgM (кг на погонный метр). */
+export function rodDeflection({ L, load = DEFAULT_ROD_LOAD, D = ROD.D, wall = ROD.wall, E = E_STEEL }) {
+  const I = (Math.PI / 64) * (D ** 4 - (D - 2 * wall) ** 4), q = (load * G) / 1000; // мм⁴ и Н/мм
+  return (5 * q * L ** 4) / (384 * E * I);
+}
+
+/** Наибольший пролёт штанги, при котором прогиб не больше пролёта / SAG_DIV. */
+export function maxRodSpan(load = DEFAULT_ROD_LOAD, opts = {}) {
+  const k = rodDeflection({ L: 1, load, ...opts });
+  return (1 / (k * SAG_DIV)) ** (1 / 3);
+}
