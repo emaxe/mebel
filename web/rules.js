@@ -156,6 +156,7 @@ export function normalize(P) {
     if (!P.overrides.length) delete P.overrides;
   }
   if (!P.plinthStrip || P.base !== 'legs') delete P.plinthStrip; else P.plinthStrip = true;
+  P.shelfLoad = clamp(Number.isFinite(+P.shelfLoad) ? Math.round(+P.shelfLoad) : 80, 20, 250);
   P.railW = clamp(Number.isFinite(+P.railW) ? Math.round(+P.railW) : 100, 60, 200);
   P.sections = (P.sections || []).slice(0, R.maxSec);
   if (!P.sections.length) P.sections = [newSection(P)];

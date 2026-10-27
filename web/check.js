@@ -1,6 +1,7 @@
 // Проверка собираемости: деталь за деталью, отверстие за отверстием, этап за этапом. Без DOM: работает в node (тесты) и в браузере.
 // checkBuild(spec, P, { N, skipKin }) → [{ level: 'error' | 'warn', code, text, parts }]. N — результат nest() (необязателен: проверка «лист вмещает деталь»), skipKin — не считать кинематику (её показывает своя панель).
 import { dims, closedOverlaps, kinProblems } from './kinematics.js';
+import { shelfDeflection, maxShelfSpan, DEFAULT_LOAD, SAG_DIV } from './norms.js';
 import { STAGES } from './model.js';
 import { hingeCount, defaultHw } from './hwparams.js';
 
@@ -209,9 +210,12 @@ export function checkBuild(spec, P, opts = {}) {
   // ── 7. функциональные правила
   if (P.push && (P.handle !== 'none' || P.hinge !== 'plain')) add('error', 'push', 'Push-to-open: нужны фасады без ручек и петли без доводчика (доводчик гасит толчок)');
   if (P.push && P.slide === 'ballSoft') add('error', 'push', 'Push-to-open: направляющие с доводчиком не выталкивают ящик');
-  const maxShelf = P.thickness >= 22 ? 1000 : 800;
+  const load = P.shelfLoad || DEFAULT_LOAD;
   for (const p of parts) {
-    if (/^Полка (съёмная|стационарная|антресоли|зоны)$/.test(p.name) && p.L > maxShelf) add('warn', 'sag', `${nm(p)}: пролёт ${Math.round(p.L)} мм, ЛДСП ${p.T} мм прогнётся под нагрузкой (до ${maxShelf} мм)`, [p]);
+    if (/^Полка (съёмная|стационарная|антресоли|зоны)$/.test(p.name)) {
+      const span = maxShelfSpan(p.T, load);
+      if (p.L > span) { const d = shelfDeflection({ L: p.L, depth: p.W, T: p.T, load }); add('warn', 'sag', `${nm(p)}: пролёт ${Math.round(p.L)} мм, ЛДСП ${p.T} мм прогнётся на ${d.toFixed(1).replace('.', ',')} мм при нагрузке ${load} кг/м² (допустимо ${(p.L / SAG_DIV).toFixed(1).replace('.', ',')} мм; предел пролёта ${Math.floor(span / 10) * 10} мм)`, [p]); }
+    }
     if (p.name === 'Полка стеклянная' && p.L > 600) add('warn', 'sag', `${nm(p)}: стекло 6 мм с пролётом ${Math.round(p.L)} мм (больше 600) прогнётся под нагрузкой: нужна опора или толще`, [p]);
     if (p.name === 'Фасад двери' && p.L > 600) add('warn', 'wide-door', `${nm(p)}: дверь шире 600 мм (${Math.round(p.L)}), будет провисать на петлях`, [p]);
   }
