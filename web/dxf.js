@@ -41,11 +41,11 @@ export function partContour(L, W, cutouts = []) {
   return out;
 }
 
-const COLOR = [[/^KORPUS$/, 7], [/^FASAD$/, 4], [/^HDF$/, 8], [/^(STEKLO|ZERKALO)$/, 5], [/^KROMKA_/, 3], [/^PAZ_/, 5], [/^VYREZ$/, 1], [/^(FREZA_|OKNO_|FALTS_)/, 6], [/_TORETS$/, 2], [/_B$/, 5], [/_A$/, 1], [/^PODPISI$/, 8]];
+const COLOR = [[/^KORPUS$/, 7], [/^FASAD$/, 4], [/^HDF$/, 8], [/^(STEKLO|ZERKALO)$/, 5], [/^KROMKA_/, 3], [/^PAZ_/, 5], [/^VYREZ$/, 1], [/^(FREZA_|OKNO_|FALTS_)/, 6], [/_TORETS$/, 2], [/_B$/, 5], [/_A$/, 1], [/^PODPISI$/, 8], [/^SHEET$/, 7], [/^TRIM$/, 8], [/^PIECE$/, 3], [/^OFFCUT$/, 2]];
 const colorOf = name => (COLOR.find(([re]) => re.test(name)) || [0, 7])[1];
 
-/** groups — результат groupParts(spec). opts.edges: рисовать линии кромки (по умолчанию да), opts.labels: подписи. */
-export function dxfFromGroups(groups, { edges = true, labels = true } = {}) {
+/** Накопитель сущностей DXF R12: слои, границы чертежа, итоговая сборка файла с таблицами. */
+function writer() {
   const ent = [], layers = new Set(['0']);
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   const f = v => +v.toFixed(2);
@@ -61,6 +61,24 @@ export function dxfFromGroups(groups, { edges = true, labels = true } = {}) {
     ent.push('0', 'SEQEND', '8', ly);
   };
   const text = (ly, x, y, h, s) => { grow(x, y); ent.push('0', 'TEXT', '8', layer(ly), '10', f(x), '20', f(y), '30', 0, '40', h, '1', s); };
+  const build = () => {
+    if (!Number.isFinite(minX)) { minX = minY = 0; maxX = maxY = 1; }
+    const head = ['0', 'SECTION', '2', 'HEADER', '9', '$ACADVER', '1', 'AC1009', '9', '$DWGCODEPAGE', '3', 'ANSI_1251', '9', '$INSUNITS', '70', '4',
+      '9', '$EXTMIN', '10', f(minX), '20', f(minY), '30', 0, '9', '$EXTMAX', '10', f(maxX), '20', f(maxY), '30', 0, '0', 'ENDSEC'];
+    const names = [...layers].sort((a, b) => (a === '0' ? -1 : b === '0' ? 1 : a < b ? -1 : 1));
+    const tables = ['0', 'SECTION', '2', 'TABLES',
+      '0', 'TABLE', '2', 'LTYPE', '70', 1, '0', 'LTYPE', '2', 'CONTINUOUS', '70', 0, '3', 'Solid line', '72', 65, '73', 0, '40', 0, '0', 'ENDTAB',
+      '0', 'TABLE', '2', 'LAYER', '70', names.length];
+    for (const nm of names) tables.push('0', 'LAYER', '2', nm, '70', 0, '62', colorOf(nm), '6', 'CONTINUOUS');
+    tables.push('0', 'ENDTAB', '0', 'ENDSEC');
+    return toCp1251([...head, ...tables, '0', 'SECTION', '2', 'ENTITIES', ...ent, '0', 'ENDSEC', '0', 'EOF'].join('\r\n'));
+  };
+  return { line, circle, poly, text, build };
+}
+
+/** groups — результат groupParts(spec). opts.edges: рисовать линии кромки (по умолчанию да), opts.labels: подписи. */
+export function dxfFromGroups(groups, { edges = true, labels = true } = {}) {
+  const { line, circle, poly, text, build } = writer();
   const lay = { body: 'KORPUS', front: 'FASAD', back: 'HDF', glass: 'STEKLO', mirror: 'ZERKALO' };
   const ROW = 7000, GAP = 150;
   let X = 0, Y = 0, rowH = 0;
@@ -102,16 +120,28 @@ export function dxfFromGroups(groups, { edges = true, labels = true } = {}) {
     }
     X += g.L + GAP; rowH = Math.max(rowH, g.W + th * 2.6);
   }
-  if (!Number.isFinite(minX)) { minX = minY = 0; maxX = maxY = 1; }
-  const head = ['0', 'SECTION', '2', 'HEADER', '9', '$ACADVER', '1', 'AC1009', '9', '$DWGCODEPAGE', '3', 'ANSI_1251', '9', '$INSUNITS', '70', '4',
-    '9', '$EXTMIN', '10', f(minX), '20', f(minY), '30', 0, '9', '$EXTMAX', '10', f(maxX), '20', f(maxY), '30', 0, '0', 'ENDSEC'];
-  const names = [...layers].sort((a, b) => (a === '0' ? -1 : b === '0' ? 1 : a < b ? -1 : 1));
-  const tables = ['0', 'SECTION', '2', 'TABLES',
-    '0', 'TABLE', '2', 'LTYPE', '70', 1, '0', 'LTYPE', '2', 'CONTINUOUS', '70', 0, '3', 'Solid line', '72', 65, '73', 0, '40', 0, '0', 'ENDTAB',
-    '0', 'TABLE', '2', 'LAYER', '70', names.length];
-  for (const nm of names) tables.push('0', 'LAYER', '2', nm, '70', 0, '62', colorOf(nm), '6', 'CONTINUOUS');
-  tables.push('0', 'ENDTAB', '0', 'ENDSEC');
-  return toCp1251([...head, ...tables, '0', 'SECTION', '2', 'ENTITIES', ...ent, '0', 'ENDSEC', '0', 'EOF'].join('\r\n'));
+  return build();
+}
+
+/** Карта раскроя: листы, обрезка, детали (замкнутые контуры с номерами) и деловые остатки. N — результат nest(). */
+export function nestMapDXF(N) {
+  const { line, poly, text, build } = writer();
+  const GAP = 300;
+  let Y = 0;
+  for (const sh of N.sheets) {
+    const y0 = Y - sh.W;
+    poly('SHEET', roundedRect(0, 0, sh.L, sh.W), 0, y0);
+    if (sh.trim > 0) poly('TRIM', roundedRect(sh.trim, sh.trim, sh.L - sh.trim, sh.W - sh.trim), 0, y0);
+    for (const o of sh.offcuts || []) poly('OFFCUT', roundedRect(sh.trim + o.x, sh.trim + o.y, sh.trim + o.x + o.l, sh.trim + o.y + o.w), 0, y0);
+    for (const p of sh.pieces) {
+      poly('PIECE', roundedRect(sh.trim + p.x, sh.trim + p.y, sh.trim + p.x + p.l, sh.trim + p.y + p.w), 0, y0);
+      const h = Math.max(8, Math.min(40, p.w / 3, p.l / 6));
+      text('PODPISI', sh.trim + p.x + 6, y0 + sh.trim + p.y + p.w / 2 - h / 2, h, `№${p.no} ${Math.round(p.l * 10) / 10}x${Math.round(p.w * 10) / 10}`);
+    }
+    text('PODPISI', 0, y0 + sh.W + 20, 40, `${sh.mat}: лист ${sh.idx} из ${sh.of}, ${sh.L}x${sh.W}, пропил/обрезка ${sh.trim} мм`);
+    Y = y0 - GAP;
+  }
+  return build();
 }
 
 const CP1251_LATIN1 = new Set([0xa0, 0xa4, 0xa6, 0xa7, 0xa9, 0xab, 0xac, 0xad, 0xae, 0xb0, 0xb1, 0xb5, 0xb6, 0xb7, 0xbb]);

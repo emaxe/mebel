@@ -1,6 +1,8 @@
 import { buildSpec, isDrawer } from './model.js';
 import { build3D } from './build3d.js';
 import { toCSV, toDXF, groupParts, nest, partKey, sawSize } from './export.js';
+import { toCutCSV, toDrillJSON } from './export-cut.js';
+import { nestMapDXF } from './dxf.js';
 import { checkBuild, panelIssues } from './check.js';
 import { assemblySteps } from './assembly.js';
 import { modelsFor, selKey, variantOf, resolveHw, KIND_LABELS } from './fittings.js';
@@ -784,6 +786,9 @@ const EXPORTS = {
   buy: () => openProd('#buy'),
   csv: () => download(toCSV(spec, `${typeLabel(P.type)} ${Math.round(spec.meta.W)} × ${P.height} × ${P.depth} мм`), stamp() + '.csv', 'text/csv;charset=utf-8'),
   dxf: () => download(toDXF(spec), stamp() + '.dxf', 'application/dxf'),
+  cutcsv: () => download(toCutCSV(groupParts(spec), { textured: l => isTextured(cat, l) }), stamp() + '_raskroy.csv', 'text/csv;charset=utf-8'),
+  cutmap: () => download(nestMapDXF(nestFor(spec)), stamp() + '_karta_raskroya.dxf', 'application/dxf'),
+  drill: () => download(toDrillJSON(groupParts(spec), { project: db[cur] ? db[cur].name : '', type: P.type }), stamp() + '_operacii.json', 'application/json'),
   obj: () => stage._runExport('obj'),
   glb: () => stage._runExport('glb'),
   cat: () => openCatalog(),
