@@ -58,6 +58,8 @@ export function build3D(THREE, spec, P, opts = {}) {
   const groups = {};
   const hidden = g => P.hideDoors && g && (g.type === 'hinge' || g.type === 'slidex');
   const skipStage = st => asm && !asm.shown.has(st);
+  const cmats = new Map();
+  const colored = (k, c) => { const key = k + c; if (!cmats.has(key)) { const m = M[k].clone(); m.color.set(c); cmats.set(key, m); } return cmats.get(key); };
   const hlMats = new Map();
   // деталь текущего шага — тот же материал с оранжевой подсветкой
   const hl = (st, m) => {
@@ -95,7 +97,7 @@ export function build3D(THREE, spec, P, opts = {}) {
     if (hidden(p.group) || skipStage(p.asm)) return;
     curPart = i;
     const par = parentFor(p.group);
-    const mat = hl(p.asm, M[p.mat]);
+    const mat = hl(p.asm, p.color ? colored(p.mat, p.color) : M[p.mat]);
     const [sx, sy, sz] = dims(p);
     const name = translit(p.name) + '_' + (i + 1);
     if (p.style === 'shaker' || p.style === 'glass') {

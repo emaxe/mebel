@@ -360,6 +360,28 @@ function control(c, obj, onChange) {
 }
 
 // ── вырезы в деталях: список карточек, правка по индексу (после render список пересоздаётся нормализацией)
+function overridesEditor() {
+  const box = el('div', 'cutbox');
+  const names = () => [...new Set((spec ? spec.parts : []).filter(p => (p.mat === 'body' || p.mat === 'front') && /^ЛДСП/.test(p.label)).map(p => p.name))];
+  const decors = () => cat.decors.map(d => d.name);
+  const commit = fn => { act(fn)(); drawGlobal(); render(false); };
+  box.append(el('div', 'hint2', 'Другой декор для отдельных деталей, например боковая видимая панель в другом цвете. Такие детали идут в раскрой отдельным материалом.'));
+  (P.overrides || []).forEach((o, i) => {
+    const row = el('div', 'ovrow'), pn = el('select'), sc = el('select'), dc = el('select'), del = el('button', '', '×');
+    [...new Set([o.part, ...names()])].forEach(n => pn.append(new Option(n, n, false, n === o.part)));
+    sc.append(new Option('все секции', 0, false, !o.sec)); P.sections.forEach((_, k) => sc.append(new Option(`секция ${k + 1}`, k + 1, false, o.sec === k + 1)));
+    decors().forEach(n => dc.append(new Option(n, n, false, n === o.decor)));
+    pn.onchange = () => commit(() => { P.overrides[i].part = pn.value; });
+    sc.onchange = () => commit(() => { P.overrides[i].sec = +sc.value; });
+    dc.onchange = () => commit(() => { P.overrides[i].decor = dc.value; P.overrides[i].color = (cat.decors.find(d => d.name === dc.value) || {}).color || '#cccccc'; });
+    del.title = 'Убрать правило'; del.onclick = () => commit(() => { P.overrides.splice(i, 1); if (!P.overrides.length) delete P.overrides; });
+    row.append(pn, sc, dc, del); box.append(row);
+  });
+  const add = el('button', '', '+ Деталь другим декором'); add.disabled = !names().length || !decors().length || (P.overrides || []).length >= 30;
+  add.onclick = () => commit(() => { const d = cat.decors[0]; (P.overrides = P.overrides || []).push({ part: names()[0], sec: 0, decor: d.name, color: d.color }); });
+  box.append(add);
+  return box;
+}
 function cutoutsEditor() {
   const box = el('div', 'cutbox');
   const sample = name => spec && spec.parts.find(p => p.name === name && !p.group);
@@ -473,6 +495,7 @@ const globalDefs = () => {
       { k: 'wallFix', l: 'Крепление к стене', tog: 1, hint: 'Анкерные уголки сзади под крышкой: высокое изделие не опрокинется.' },
       ...fittingRows(),
     ]],
+    ['Декор деталей', [{ custom: overridesEditor }]],
     ['Вырезы', [{ custom: cutoutsEditor }]],
     ['Кромка', [
       { k: 'edgeFront', l: 'Лицевые торцы', seg: [[0.4, '0,4'], [1, '1'], [2, '2']], hint: 'Толщина кромки ПВХ на видимых торцах. Кромка 1 мм и толще вычитается из пильного размера.' },

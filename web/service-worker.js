@@ -1,5 +1,5 @@
 // Cache-first для статики. При изменении файлов увеличьте VERSION.
-const VERSION = 'mebel-v42';
+const VERSION = 'mebel-v43';
 const ASSETS = [
   './', 'index.html', 'production.html', 'view.html', 'view.js', 'pwa.js', 'manifest.webmanifest',
   'app.js', 'model.js', 'model-fronts.js', 'build3d.js', 'export.js', 'nest.js', 'project.js', 'worktop.js', 'plan.js', 'kinematics.js', 'rules.js', 'autofix.js', 'three-d-stage.js',

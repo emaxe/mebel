@@ -150,6 +150,11 @@ export function normalize(P) {
   if (P.push) { if (P.hinge !== 'plain') P.hinge = 'plain'; if (P.slide === 'ballSoft') P.slide = 'ball'; } // доводчик гасит толчок
   if (!R.cornice) P.cornice = false;
   if (!['inset', 'overlay', 'rails'].includes(P.topType) || (P.topType === 'rails' && !R.rails)) P.topType = 'inset';
+  if (P.overrides !== undefined) {
+    const list = (Array.isArray(P.overrides) ? P.overrides : []).filter(o => o && typeof o === 'object' && typeof o.part === 'string' && o.part.trim() && typeof o.decor === 'string' && o.decor.trim()).slice(0, 30);
+    P.overrides = list.map(o => ({ part: o.part.trim().slice(0, 60), sec: Number.isFinite(+o.sec) ? clamp(Math.round(+o.sec), 0, 30) : 0, decor: o.decor.trim().slice(0, 40), color: typeof o.color === 'string' && /^#[0-9a-f]{3,8}$/i.test(o.color) ? o.color : '#cccccc' }));
+    if (!P.overrides.length) delete P.overrides;
+  }
   P.railW = clamp(Number.isFinite(+P.railW) ? Math.round(+P.railW) : 100, 60, 200);
   P.sections = (P.sections || []).slice(0, R.maxSec);
   if (!P.sections.length) P.sections = [newSection(P)];

@@ -347,6 +347,12 @@ export function buildSpec(P, opts = {}) {
     const heads = vis.reduce((a, [p, f]) => a + p.holes.filter(h => h.f === f && h.d === 7 && h.h === 'скв.').length, 0);
     if (heads) { at('final', () => addHw('Заглушка на конфирмат', heads)); for (const [p] of vis) p.notes.push('шляпки конфирматов на лицевой пласти закрыть заглушками под цвет корпуса'); }
   }
+  // подмена декора отдельных деталей: P.overrides = [{ part, sec, decor, color }]
+  for (const o of P.overrides || []) for (const p of parts) {
+    if ((p.mat === 'body' || p.mat === 'front') && /^ЛДСП/.test(p.label) && p.name === o.part && (!o.sec || p.sec === o.sec)) {
+      p.label = `ЛДСП ${o.decor}`; p.color = o.color; p.notes = [...p.notes, `декор «${o.decor}» вместо основного`];
+    }
+  }
   return { parts, extras, hwx: [...hwx.values()], hw: [...hw.entries()], warnings, meta: { W, H: H + (P.cornice ? t : 0), D, yB, yT, ih, sections: secMeta } };
 }
 
