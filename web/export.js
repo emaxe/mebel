@@ -9,6 +9,9 @@ export function sawSize(p) {
 }
 const r = v => Math.round(v * 10) / 10;
 
+/** Вдоль какой стороны детали идут волокна: 'L' (длина) или 'W' (ширина). Фасады стоят волокном по высоте, узкие горизонтальные планки (цоколь, карниз) — по длине. */
+export const grainOf = g => g.grain || (g.plane === 'xy' && g.W >= g.L ? 'W' : 'L');
+
 /** Ключ, по которому одинаковые детали сводятся в одну позицию спецификации. */
 export const partKey = p => JSON.stringify([p.name, p.label, p.T, r(p.L), r(p.W), p.edges, p.holes, p.grooves, p.notes, p.mill || null, p.cutouts || null]);
 
@@ -54,8 +57,7 @@ export function nest(groups, opts = {}) {
     if (!byMat.has(key)) byMat.set(key, { label: g.label, T: g.T, pcs: [] });
     for (let i = 0; i < g.qty; i++) {
       let l = g.saw.L, w = g.saw.W;
-      const grain = g.grain || (g.plane === 'xy' && g.W >= g.L ? 'W' : 'L'); // фасады стоят волокном по высоте, узкие горизонтальные планки (цоколь, карниз) — по длине
-      if (grain === 'W') [l, w] = [w, l];
+      if (grainOf(g) === 'W') [l, w] = [w, l];
       const fixed = !!isTex(g.label);
       if (!fixed && w > l) [l, w] = [w, l];
       byMat.get(key).pcs.push({ no: g.no, l, w, fixed });

@@ -1,7 +1,8 @@
 // Страница «Задание на распил»: расчёт и HTML целиком, без DOM и хранилища — поэтому проверяется в node.
 // Данные для обработчиков (скачивание, отметки «куплено») возвращаются наружу; их вешает production.html.
 import { buildSpec } from './model.js';
-import { groupParts, nest, edgeSummary } from './export.js';
+import { groupParts, nest, edgeSummary, grainOf } from './export.js';
+import { partDrawing } from './partdraw.js';
 import { sheetFor, isTextured } from './catalog.js';
 import { estimate } from './estimate.js';
 import { frontView, sideView } from './drawings.js';
@@ -151,46 +152,7 @@ export function renderProduction({ P, cat, projName, preview = null, shareToken 
   html += `</div></section>`;
 
   // part drawings
-  const COL = { 35: '#d4672a', 15: '#8e44ad', 8: '#2f8f5b', 7: '#2b6cb0', 5: '#1f1e1b', 3: '#8a8478' };
-  const ECOL = e => (e >= 1 ? '#c0392b' : '#d9a441');
-  function drawing(g) {
-    const BW = 900, BH = 300, pad = 60;
-    const sc = Math.min((BW - 2 * pad) / g.L, (BH - 2 * pad) / g.W);
-    const w = g.L * sc, h = g.W * sc, ox = pad, oy = pad + h;
-    const X = u => ox + u * sc, Y = v => oy - v * sc;
-    let s = `<svg viewBox="0 0 ${BW} ${h + 2 * pad}" style="width:100%;max-height:340px">`;
-    s += `<rect x="${ox}" y="${pad}" width="${w}" height="${h}" fill="#f6f3ec" stroke="#1f1e1b" stroke-width="1.5"/>`;
-    const ed = g.edges, et = (x1, y1, x2, y2, v, lx, ly, lab) => v ? `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${ECOL(v)}" stroke-width="${v >= 1 ? 5 : 3}"/><text x="${lx}" y="${ly}" font-size="11" fill="${ECOL(v)}" text-anchor="middle">${lab} ${fmt(v)}</text>` : '';
-    s += et(ox, oy, ox + w, oy, ed.d1, ox + w / 2, oy + 16, 'Д1');
-    s += et(ox, pad, ox + w, pad, ed.d2, ox + w / 2, pad - 8, 'Д2');
-    s += et(ox, pad, ox, oy, ed.w1, ox - 22, pad + h / 2, 'Ш1');
-    s += et(ox + w, pad, ox + w, oy, ed.w2, ox + w + 22, pad + h / 2, 'Ш2');
-    for (const gr of g.grooves) for (const dv of [0, gr.w]) s += `<line x1="${ox}" x2="${ox + w}" y1="${Y(gr.at + dv)}" y2="${Y(gr.at + dv)}" stroke="#6b5a45" stroke-dasharray="6 4"/>`;
-    // фрезеровка (синим: пунктир — утопление или четверть, сплошная — сквозное окно) и вырезы (красная заливка)
-    const rr = (u0, v0, u1, v1, r, attrs) => `<rect x="${X(u0)}" y="${Y(v1)}" width="${(u1 - u0) * sc}" height="${(v1 - v0) * sc}" rx="${(r || 0) * sc}" ${attrs}/>`;
-    const mi = g.mill;
-    if (mi && mi.kind === 'shaker') s += rr(mi.frameW, mi.frameW, g.L - mi.frameW, g.W - mi.frameW, mi.cornerR, 'fill="#e8f0fa" stroke="#2b6cb0" stroke-width="1.4" stroke-dasharray="7 4"');
-    if (mi && mi.kind === 'glass') {
-      const o = (mi.rebate[0] - mi.window[0]) / 2;
-      s += rr(mi.frameW - o, mi.frameW - o, g.L - mi.frameW + o, g.W - mi.frameW + o, mi.cornerR, 'fill="none" stroke="#2b6cb0" stroke-width="1.2" stroke-dasharray="7 4"');
-      s += rr(mi.frameW, mi.frameW, g.L - mi.frameW, g.W - mi.frameW, mi.cornerR, 'fill="#e8f0fa" stroke="#2b6cb0" stroke-width="1.6"');
-    }
-    for (const c of g.cutouts || []) s += rr(c.u0, c.v0, c.u1, c.v1, c.r, 'fill="#f8d7d3" stroke="#c0392b" stroke-width="1.6"');
-    for (const ho of g.holes) {
-      const c = COL[ho.d] || '#555', x = X(ho.u), y = Y(ho.v);
-      if (ho.f === 'A' || ho.f === 'B') {
-        const rr = Math.max(ho.d / 2 * sc, ho.d >= 30 ? 6 : 2.6);
-        s += `<circle cx="${x}" cy="${y}" r="${rr}" fill="${ho.f === 'A' ? c : 'none'}" stroke="${c}" stroke-width="1.4" ${ho.f === 'B' ? 'stroke-dasharray="2 1.5"' : ''}/>`;
-      } else {
-        const d = { w1: [1, 0], w2: [-1, 0], d1: [0, -1], d2: [0, 1] }[ho.f], L = 12;
-        s += `<path d="M${x} ${y} L${x + d[0] * L - d[1] * 4} ${y - d[1] * L - d[0] * 4} L${x + d[0] * L + d[1] * 4} ${y - d[1] * L + d[0] * 4}Z" fill="#2b6cb0"/>`;
-      }
-    }
-    s += `<text x="${ox - 4}" y="${oy + 30}" font-size="11" fill="#8a8478">0</text>`;
-    s += `<line x1="${ox}" y1="${oy + 34}" x2="${ox + w}" y2="${oy + 34}" stroke="#8a8478"/><text x="${ox + w / 2}" y="${oy + 48}" font-size="12" text-anchor="middle">${fmt(g.L)}</text>`;
-    s += `<line x1="${ox + w + 40}" y1="${pad}" x2="${ox + w + 40}" y2="${oy}" stroke="#8a8478"/><text x="${ox + w + 46}" y="${pad + h / 2}" font-size="12">${fmt(g.W)}</text>`;
-    return s + '</svg>';
-  }
+  const textured = g => (isTextured(cat, g.label) ? grainOf(g) : null);
   const FACE = { A: { yz: 'пласть A (слева)', xz: 'пласть A (верх)', xy: 'пласть A (лицо)' }, B: { yz: 'пласть B (справа)', xz: 'пласть B (низ)', xy: 'пласть B (тыл)' } };
   const fName = (f, pl) => (FACE[f] ? FACE[f][pl] : 'торец ' + ({ w1: 'Ш1', w2: 'Ш2', d1: 'Д1', d2: 'Д2' }[f]));
   html += `<section class="sheet m-task"><h2>Чертежи деталей: кромка и присадка</h2>
@@ -202,7 +164,8 @@ export function renderProduction({ P, cat, projName, preview = null, shareToken 
     for (const h of g.holes) { const k = `${h.note}|${h.d}|${h.h}|${h.f}`; if (!hg.has(k)) hg.set(k, []); hg.get(k).push(h); }
     html += `<div class="part"><div class="ph"><b>№${g.no} ${esc(g.name)}</b><span>${fmt(g.L)} × ${fmt(g.W)} × ${g.T} мм</span><span>${esc(g.label)}</span><span>${g.qty} шт.</span><span>секция ${g.secLabel}</span></div>
     <p class="muted" style="margin:0 0 6px">${esc(orientLines(g).join(' '))}</p>
-    ${drawing(g)}
+    ${partDrawing(g, { grain: textured(g) })}
+    ${g.holes.some(h => h.f === 'B') ? partDrawing(g, { view: 'B', grain: textured(g) }) : ''}
     ${(() => { const m = machiningRows(g); return m.length ? `<table><tr><th>Фрезеровка / вырез</th><th class="n">Размер, мм</th><th>Положение</th><th>Пласть</th><th class="n">Глубина</th><th>Примечание</th></tr>${m.map(x => `<tr><td>${esc(x.title)}</td><td class="n">${esc(x.size)}</td><td>${esc(x.pos)}</td><td>${esc(x.face)}</td><td class="n">${esc(x.depth)}</td><td>${esc(x.note)}</td></tr>`).join('')}</table>` : ''; })()}
     ${hg.size ? `<table><tr><th>Назначение</th><th>Сторона</th><th class="n">Ø</th><th class="n">Глубина</th><th class="n">Шт</th><th>Координаты X/Y, мм</th></tr>${[...hg.values()].map(hs => `<tr><td>${esc(hs[0].note)}</td><td>${fName(hs[0].f, g.plane)}</td><td class="n">${hs[0].d}</td><td class="n">${hs[0].h}</td><td class="n">${hs.length}</td><td style="font-family:ui-monospace,Menlo,monospace;font-size:11px">${hs.map(h => `${fmt(h.u)}/${fmt(h.v)}`).join('  ')}</td></tr>`).join('')}</table>` : '<p class="muted">Присадки нет.</p>'}
     ${g.notes.length ? `<p class="muted">${esc(g.notes.join('; '))}</p>` : ''}</div>`;
