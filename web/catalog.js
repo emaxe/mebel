@@ -30,6 +30,7 @@ export const DEFAULT_CATALOG = {
   hardware: [
     { match: 'Конфирмат', price: 3, art: '' },
     { match: 'Заглушка', price: 2, art: '' },
+    { match: 'Навес', price: 250, art: '' },
     { match: 'Эксцентрик', price: 12, art: '' },
     { match: 'Шкант', price: 1.5, art: '' },
     { match: 'Полкодержатель', price: 2, art: '' },
@@ -50,6 +51,7 @@ export const DEFAULT_CATALOG = {
   fittings: [
     { id: 'confirmat', kind: 'confirmat', variant: '', brand: '', name: 'Конфирмат 7×50', art: '', price: 150, pack: 50, stockLen: 0, url: '', params: {} },
     { id: 'plug', kind: 'plug', variant: '', brand: '', name: 'Заглушка на конфирмат', art: '', price: 100, pack: 50, stockLen: 0, url: '', params: {} },
+    { id: 'hanger', kind: 'hanger', variant: '', brand: '', name: 'Навес кухонный регулируемый (комплект)', art: '', price: 500, pack: 2, stockLen: 0, url: '', params: {} },
     { id: 'minifix', kind: 'minifix', variant: '', brand: '', name: 'Эксцентрик (минификс) Ø15 + штифт', art: '', price: 120, pack: 10, stockLen: 0, url: '', params: {} },
     { id: 'dowel', kind: 'dowel', variant: '', brand: '', name: 'Шкант 8×35', art: '', price: 150, pack: 100, stockLen: 0, url: '', params: {} },
     { id: 'pin', kind: 'shelfPin', variant: '', brand: '', name: 'Полкодержатель Ø5', art: '', price: 40, pack: 20, stockLen: 0, url: '', params: {} },
@@ -87,8 +89,8 @@ export const DEFAULT_CATALOG = {
     { id: 'wall-dowel', kind: 'wallDowel', variant: '', brand: '', name: '', art: '', price: 40, pack: 4, stockLen: 0, url: '', params: {} },
   ],
   milling: { frameW: 70, recessDepth: 8, cornerR: 3, glassOverlap: 5, rebateDepth: 5, glassChamfer: 0, glassCornerR: 0 }, // фрезеровка фасадов и кромка стекла (hwparams.js)
-  works: { cut: 60, edge: 45, hole: 8, assembly: 12 }, // распил руб./м реза, кромкование руб./м, присадка руб./отв., сборка % от материалов и фурнитуры
-  special: { glass: 2800, mirror: 3200 }, // руб. за м² стекла и зеркала
+  works: { cut: 60, edge: 45, hole: 8, assembly: 12, cutout: 800 }, // распил руб./м реза, кромкование руб./м, присадка руб./отв., сборка % от материалов и фурнитуры
+  special: { glass: 2800, mirror: 3200, worktop: 3500 }, // руб. за м² стекла и зеркала, за пог. м столешницы
   markup: 30, // %
   currency: '₽',
   cut: { kerf: 4, trim: 10, minOffcut: [300, 100] },
@@ -134,7 +136,7 @@ export function sanitizeCatalog(c) {
   // справочник старой версии: дописываем модели по умолчанию, которых в нём ещё нет
   if (had < CATALOG_VERSION) { const ids = new Set(out.fittings.map(f => f.id)); for (const f of DEFAULT_CATALOG.fittings) if (!ids.has(f.id)) out.fittings.push(clone(f)); }
   out.version = CATALOG_VERSION;
-  for (const [o, ks] of [[out.works, ['cut', 'edge', 'hole', 'assembly']], [out.special, ['glass', 'mirror']], [out.cut, ['kerf', 'trim']], [out.milling, Object.keys(DEFAULT_CATALOG.milling)]]) for (const k of ks) num(o, k, DEFAULT_CATALOG[o === out.works ? 'works' : o === out.special ? 'special' : o === out.cut ? 'cut' : 'milling'][k]);
+  for (const [o, ks] of [[out.works, ['cut', 'edge', 'hole', 'assembly', 'cutout']], [out.special, ['glass', 'mirror', 'worktop']], [out.cut, ['kerf', 'trim']], [out.milling, Object.keys(DEFAULT_CATALOG.milling)]]) for (const k of ks) num(o, k, DEFAULT_CATALOG[o === out.works ? 'works' : o === out.special ? 'special' : o === out.cut ? 'cut' : 'milling'][k]);
   num(out, 'markup', DEFAULT_CATALOG.markup);
   out.cut.minOffcut = out.cut.minOffcut.map((v, i) => (Number.isFinite(+v) ? +v : DEFAULT_CATALOG.cut.minOffcut[i]));
   for (const k of Object.keys(out.edge)) if (!Number.isFinite(+out.edge[k])) delete out.edge[k]; else out.edge[k] = +out.edge[k];

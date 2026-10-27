@@ -221,3 +221,43 @@ describe('документы проекта из нескольких модул
     expect(html).not.toMatch(/Проект из \d+ модул/);
   });
 });
+
+describe('модуль над предыдущим', () => {
+  const kitchen = () => { const r = makePreset('kbase'); addModule(r, makePreset('kbase'), { name: 'Низ 2' }); addModule(r, makePreset('kwall'), { name: 'Верх', y: 1400, over: true, after: 0 }); return r; };
+  it('стоит над предыдущим, не раздвигая ряд', () => {
+    const r = makePreset('kbase'); addModule(r, makePreset('kbase'), { name: 'Низ 2' }); addModule(r, makePreset('kwall'), { name: 'Верх', y: 1400, over: true, after: 0 });
+    const pr = buildProject(r), [a, w, b] = pr.mods;
+    expect(moduleList(r).map(m => m.name)).toEqual(['Корпус 1', 'Верх', 'Низ 2']);
+    expect(w.x - w.W / 2).toBeCloseTo(a.x - a.W / 2, 6);
+    expect(b.x - b.W / 2).toBeCloseTo(a.x + a.W / 2, 6);
+    expect(pr.spec.meta.W).toBeCloseTo(a.W + b.W, 6);
+    expect(w.y).toBe(1400);
+  });
+  it('сдвиг вправо смещает верхний модуль от левого края нижнего', () => {
+    const r = makePreset('kbase'); addModule(r, makePreset('kwall'), { y: 1400, over: true, gap: 100 });
+    const pr = buildProject(r), [a, w] = pr.mods;
+    expect(w.x - w.W / 2).toBeCloseTo(a.x - a.W / 2 + 100, 6);
+  });
+  it('если верхний шире нижнего, ширина проекта увеличивается', () => {
+    const r = makePreset('kbase'); const w = makePreset('kwall'); w.sections[0].width = 900; addModule(r, w, { y: 1400, over: true });
+    const pr = buildProject(r);
+    expect(pr.spec.meta.W).toBeCloseTo(Math.max(pr.mods[0].W, pr.mods[1].W), 6);
+  });
+  it('флаг сохраняется при дублировании, перемещении и JSON-обороте; у первого модуля сбрасывается', () => {
+    const r = kitchen();
+    const k = moduleList(r).findIndex(m => m.name === 'Верх');
+    duplicateModule(r, k);
+    expect(moduleList(r).filter(m => m.over).length).toBe(2);
+    const back = normalize(JSON.parse(JSON.stringify(r)));
+    expect(moduleList(back).filter(m => m.over).length).toBe(2);
+    moveModule(r, k, -1);
+    expect(moduleList(r)[0].over).toBe(false);
+    expect(r.modules.every(m => m.over === undefined || m.over === true)).toBe(true);
+  });
+  it('setModuleProps включает и выключает флаг', () => {
+    const r = kitchen(); setModuleProps(r, 1, { over: false });
+    expect(moduleList(r)[1].over).toBe(false);
+    setModuleProps(r, 1, { over: true });
+    expect(moduleList(r)[1].over).toBe(true);
+  });
+});

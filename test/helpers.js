@@ -10,12 +10,12 @@ const int = (r, a, b) => a + Math.floor(r() * (b - a + 1));
 
 /** Случайный, но допустимый для типа проект: габариты, секции, двери, наполнение, зоны, антресоли, фурнитура. */
 export function randomProject(seed) {
-  const r = rng(seed), type = pick(r, ['wardrobe', 'wardrobe', 'rack', 'nightstand', 'dresser', 'tv']);
+  const r = rng(seed), type = pick(r, ['wardrobe', 'wardrobe', 'rack', 'nightstand', 'dresser', 'tv', 'kbase', 'kwall', 'ktall']);
   const keep = { joint: pick(r, ['confirmat', 'minifix', 'dowel']), thickness: pick(r, [16, 18, 18, 22]), backType: pick(r, ['groove', 'overlay', 'none']), handle: pick(r, ['bar', 'knob', 'profile', 'none']), slide: pick(r, ['ball', 'ballSoft', 'hidden', 'roller']), hinge: pick(r, ['soft', 'plain', 'wide']), wallFix: r() < 0.5, frontT: pick(r, [16, 19]) };
   keep.push = keep.handle === 'none' && r() < 0.5;
   const P0 = makePreset(type, keep), R = rulesOf(P0);
   P0.base = pick(r, ['plinth', 'legs', 'none']); P0.plinth = int(r, 4, 14) * 10;
-  P0.topType = pick(r, ['inset', 'overlay']); P0.topOverhang = P0.topType === 'overlay' ? int(r, 0, 3) * 10 : 0;
+  P0.topType = pick(r, R.rails ? ['inset', 'overlay', 'rails'] : ['inset', 'overlay']); P0.topOverhang = P0.topType === 'overlay' ? int(r, 0, 3) * 10 : 0;
   P0.height = int(r, R.height[0] / 10, R.height[1] / 10) * 10; P0.depth = int(r, R.depth[0] / 10, R.depth[1] / 10) * 10;
   if (R.sliding && r() < 0.25) P0.doorType = 'sliding';
   if (R.cornice) P0.cornice = r() < 0.3;
@@ -39,11 +39,11 @@ export function randomProject(seed) {
 
 /** Проект с крайними значениями: размеры на границах, все типы ручек, фурнитуры, зоны, антресоли, купе, вырезы. Может быть заведомо неудачным: расчёт обязан об этом предупредить. */
 export function extremeProject(seed) {
-  const r = rng(seed * 7919), type = pick(r, ['wardrobe', 'wardrobe', 'rack', 'nightstand', 'dresser', 'tv']);
+  const r = rng(seed * 7919), type = pick(r, ['wardrobe', 'wardrobe', 'rack', 'nightstand', 'dresser', 'tv', 'kbase', 'kwall', 'ktall']);
   const P0 = makePreset(type, { joint: pick(r, ['confirmat', 'minifix', 'dowel']), thickness: pick(r, [16, 18, 22, 25]), backType: pick(r, ['groove', 'overlay', 'none']), handle: pick(r, ['bar', 'knob', 'profile', 'none']), handleSize: pick(r, [96, 128, 160, 192, 256]), handleOrient: pick(r, ['v', 'h']), slide: pick(r, ['ball', 'ballSoft', 'hidden', 'roller']), hinge: pick(r, ['soft', 'plain', 'wide']), wallFix: r() < 0.5, frontT: pick(r, [16, 19, 22]), edgeFront: pick(r, [0.4, 1, 2]), edgeHidden: pick(r, [0, 0.4, 1]), shelfSetback: int(r, 0, 60) });
   P0.push = P0.handle === 'none' && r() < 0.5;
   const R = rulesOf(P0);
-  P0.base = pick(r, ['plinth', 'legs', 'none']); P0.plinth = int(r, 4, 20) * 10; P0.topType = pick(r, ['inset', 'overlay']); P0.topOverhang = P0.topType === 'overlay' ? int(r, 0, 5) * 10 : 0;
+  P0.base = pick(r, ['plinth', 'legs', 'none']); P0.plinth = int(r, 4, 20) * 10; P0.topType = pick(r, R.rails ? ['inset', 'overlay', 'rails'] : ['inset', 'overlay']); P0.topOverhang = P0.topType === 'overlay' ? int(r, 0, 5) * 10 : 0;
   P0.height = pick(r, [R.height[0], R.height[1], int(r, R.height[0] / 10, R.height[1] / 10) * 10]); P0.depth = pick(r, [R.depth[0], R.depth[1], int(r, R.depth[0] / 10, R.depth[1] / 10) * 10]);
   if (R.sliding && r() < 0.3) { P0.doorType = 'sliding'; P0.slidingDoors = int(r, 2, 5); P0.slidingStyle = pick(r, ['mirror', 'glass', 'flat']); }
   if (R.cornice) P0.cornice = r() < 0.4;

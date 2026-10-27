@@ -112,7 +112,7 @@ export function nest(groups, opts = {}) {
   const k = o.kerf, isTex = o.textured || textured0;
   const byMat = new Map();
   for (const g of groups) {
-    if (g.mat === 'glass' || g.mat === 'mirror') continue;
+    if (g.mat === 'glass' || g.mat === 'mirror' || g.mat === 'top') continue;
     const key = `${g.label}, ${g.T} мм`;
     if (!byMat.has(key)) byMat.set(key, { label: g.label, T: g.T, pcs: [] });
     for (let i = 0; i < g.qty; i++) {

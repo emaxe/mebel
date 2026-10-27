@@ -6,7 +6,7 @@ import { defaultHw } from './hwparams.js';
 
 /** Порядок этапов сборки; asm у детали и у extra — ключ этапа. */
 export const STAGES = ['base', 'carcass', 'dividers', 'fixed', 'back', 'top', 'backOverlay', 'cornice', 'shelves', 'rods', 'drawerBox', 'drawers', 'doors', 'flaps', 'handles', 'kupe', 'final'];
-const HW_KINDS = [[/^Конфирмат/, 'confirmat'], [/^Эксцентрик/, 'minifix'], [/^Шкант/, 'dowel'], [/^Полкодержатель/, 'shelfPin'], [/^Штангодержатель/, 'rodHolder'], [/^Штанга/, 'rod'], [/^Петля/, 'hinge'], [/^Направляющие/, 'slide'], [/^Ручка/, 'handle'], [/^Уголок мебельный/, 'bracket'], [/^Опора/, 'leg'], [/^(Саморез|Винт)/, 'screw'], [/^Клей/, 'glue'], [/^Газлифт/, 'gasLift'], [/^Стабилизатор/, 'stay'], [/^Рельс купе/, 'kupeRail'], [/^Профиль купе/, 'kupeProfile'], [/^Ролики/, 'kupeRoller'], [/^Толкатель/, 'pushLatch'], [/^Заглушка/, 'plug'], [/^Анкер/, 'wallFix'], [/^Дюбель/, 'wallDowel']];
+const HW_KINDS = [[/^Конфирмат/, 'confirmat'], [/^Эксцентрик/, 'minifix'], [/^Шкант/, 'dowel'], [/^Полкодержатель/, 'shelfPin'], [/^Штангодержатель/, 'rodHolder'], [/^Штанга/, 'rod'], [/^Петля/, 'hinge'], [/^Направляющие/, 'slide'], [/^Ручка/, 'handle'], [/^Уголок мебельный/, 'bracket'], [/^Опора/, 'leg'], [/^(Саморез|Винт)/, 'screw'], [/^Клей/, 'glue'], [/^Газлифт/, 'gasLift'], [/^Стабилизатор/, 'stay'], [/^Рельс купе/, 'kupeRail'], [/^Профиль купе/, 'kupeProfile'], [/^Ролики/, 'kupeRoller'], [/^Толкатель/, 'pushLatch'], [/^Заглушка/, 'plug'], [/^Навес/, 'hanger'], [/^Анкер/, 'wallFix'], [/^Дюбель/, 'wallDowel']];
 /** Категория фурнитуры по названию позиции. */
 export const hwKind = name => (HW_KINDS.find(([re]) => re.test(name)) || [0, 'other'])[1];
 /** Drawer with a visible front, or a built-in one hidden behind the section's door. */
@@ -35,7 +35,7 @@ export function buildSpec(P, opts = {}) {
   const S = P.sections, n = S.length, t = P.thickness, H = P.height, D = P.depth;
   const W = S.reduce((a, s) => a + s.width, 0) + (n + 1) * t;
   const b = P.base === 'none' ? 0 : P.plinth;
-  const ovTop = P.topType === 'overlay', ov = ovTop ? P.topOverhang : 0;
+  const ovTop = P.topType === 'overlay', ov = ovTop ? P.topOverhang : 0, railed = P.topType === 'rails';
   const sliding = P.doorType === 'sliding';
   const eF = P.edgeFront, eH = P.edgeHidden;
   const zC0 = P.backType === 'overlay' ? -D / 2 + 4 : -D / 2, Dc = D / 2 - zC0;
@@ -96,13 +96,22 @@ export function buildSpec(P, opts = {}) {
   const bottom = part({ name: 'Дно', plane: 'xz', L: W - 2 * t, W: Dc, c: [0, b + t / 2, zC0 + Dc / 2], edges: { d2: eF } });
   for (const v of cpos(Dc)) { conf(sideL, 'A', t / 2, v, bottom, 'w1', v, 'B'); conf(sideR, 'B', t / 2, v, bottom, 'w2', v, 'B'); }
   let top, topX0;
+  const tops = [], rw = Math.max(40, Math.min(P.railW || 100, Dc / 2 - 20)), railPts = len => (len >= 140 ? [30, len - 30] : [len / 2]);
   stage = 'top';
-  if (ovTop) {
+  if (railed) {
+    topX0 = -W / 2 + t;
+    const rear = part({ name: 'Царга задняя', plane: 'xz', L: W - 2 * t, W: rw, c: [0, H - t / 2, zC0 + rw / 2] });
+    const front = part({ name: 'Царга передняя', plane: 'xz', L: W - 2 * t, W: rw, c: [0, H - t / 2, zC0 + Dc - rw / 2], edges: { d2: eF } });
+    top = rear; tops.push({ p: rear, z0: 0 }, { p: front, z0: Dc - rw });
+    for (const tp of tops) for (const v of railPts(rw)) { conf(sideL, 'A', sideH - t / 2, tp.z0 + v, tp.p, 'w1', v, 'A'); conf(sideR, 'B', sideH - t / 2, tp.z0 + v, tp.p, 'w2', v, 'A'); }
+  } else if (ovTop) {
     top = part({ name: 'Крышка', plane: 'xz', L: W + 2 * ov, W: Dc + ov, c: [0, H - t / 2, zC0 + (Dc + ov) / 2], edges: { d2: eF, w1: eF, w2: eF, d1: ov ? eH : 0 } });
     topX0 = -W / 2 - ov;
+    tops.push({ p: top, z0: 0 });
     for (const v of cpos(Dc)) { conf(top, 'A', ov + t / 2, v, sideL, 'w2', v, 'B'); conf(top, 'A', ov + W - t / 2, v, sideR, 'w2', v, 'A'); }
   } else {
     top = part({ name: 'Крышка', plane: 'xz', L: W - 2 * t, W: Dc, c: [0, H - t / 2, zC0 + Dc / 2], edges: { d2: eF } });
+    tops.push({ p: top, z0: 0 });
     topX0 = -W / 2 + t;
     for (const v of cpos(Dc)) { conf(sideL, 'A', sideH - t / 2, v, top, 'w1', v, 'A'); conf(sideR, 'B', sideH - t / 2, v, top, 'w2', v, 'A'); }
   }
@@ -178,8 +187,9 @@ export function buildSpec(P, opts = {}) {
       const dv = part({ name: 'Перегородка', plane: 'yz', L: ih, W: divD, c: [xd, (yB + yT) / 2, divZ0 + divD / 2], edges: { d2: eF }, sec: i });
       for (const v of cpos(divD)) {
         conf(bottom, 'B', xd - (-W / 2 + t), divZ0 + v - zC0, dv, 'w1', v, 'A');
-        at('top', () => conf(top, 'A', xd - topX0, divZ0 + v - zC0, dv, 'w2', v, 'A'));
+        if (!railed) at('top', () => conf(top, 'A', xd - topX0, divZ0 + v - zC0, dv, 'w2', v, 'A'));
       }
+      if (railed) for (const tp of tops) at('top', () => conf(tp.p, 'A', xd - topX0, rw / 2, dv, 'w2', zC0 + tp.z0 + rw / 2 - divZ0, 'A'));
       bounds.push({ p: dv, y0: yB, z0: divZ0, div: true });
       if (P.base === 'plinth') { at('dividers', () => part({ name: 'Цоколь средний', plane: 'yz', L: b, W: D / 2 - 50 - zC0 - 2 * t, c: [xd, b / 2, zC0 + t + (D / 2 - 50 - zC0 - 2 * t) / 2], sec: i, notes: ['опора перегородки; ставится после стяжки перегородки (конфирматы идут снизу через дно); крепится уголками к дну'] })); }
     }
@@ -322,7 +332,8 @@ export function buildSpec(P, opts = {}) {
 
   if (P.wallFix) {
     stage = 'final';
-    addHw('Анкерный уголок для крепления к стене', 2); addHw('Саморез 4×16 (уголок к корпусу)', 2); addHw('Дюбель с шурупом 6×60 (в стену)', 2);
+    if (P.type === 'kwall') { addHw('Навес кухонный регулируемый (комплект)', 2); addHw('Дюбель с шурупом 6×60 (в стену)', 2); }
+    else { addHw('Анкерный уголок для крепления к стене', 2); addHw('Саморез 4×16 (уголок к корпусу)', 2); addHw('Дюбель с шурупом 6×60 (в стену)', 2); }
   }
   stage = 'doors';
   const ctx = { hw: hw_, pierces, setStage: v => { stage = v; }, extra, P, S, W, H, D, t, b, ovTop, sliding, eF, eH, zF, yB, yT, ih, shelfBack, sd, parts, extras, part, hole, addHw, warnings, body };
@@ -332,7 +343,7 @@ export function buildSpec(P, opts = {}) {
   const dowels = [...hw].filter(([k]) => /^Шкант/.test(k)).reduce((a, [, q]) => a + q, 0);
   if (dowels) at('carcass', () => addHw('Клей ПВА столярный, 250 г', Math.ceil(dowels / 200)));
   if ((P.joint || 'confirmat') === 'confirmat') {
-    const vis = [[sideL, 'A'], [sideR, 'B'], [top, 'A']];
+    const vis = [[sideL, 'A'], [sideR, 'B'], ...tops.map(tp => [tp.p, 'A'])];
     const heads = vis.reduce((a, [p, f]) => a + p.holes.filter(h => h.f === f && h.d === 7 && h.h === 'скв.').length, 0);
     if (heads) { at('final', () => addHw('Заглушка на конфирмат', heads)); for (const [p] of vis) p.notes.push('шляпки конфирматов на лицевой пласти закрыть заглушками под цвет корпуса'); }
   }

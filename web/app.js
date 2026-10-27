@@ -8,6 +8,7 @@ import { assemblySteps } from './assembly.js';
 import { modelsFor, selKey, variantOf, resolveHw, KIND_LABELS } from './fittings.js';
 import { HW_PARAM_DEFS, HW_DEFAULTS } from './hwparams.js';
 import { dimensions } from './dims.js';
+import { normalizeWorktop, WORKTOP_DEFAULT, CUTOUT_PRESETS, worktopRuns } from './worktop.js';
 import { buildProject, moduleList, addModule, duplicateModule, removeModule, moveModule, setModuleProps, cabinetOf, moduleCount } from './project.js';
 import { orientLines, edgeNames, machiningRows } from './partinfo.js';
 import { autoFixAsync, kinProblems } from './autofix.js';
@@ -26,7 +27,7 @@ let cat = loadCatalog();
 const woods = () => cat.decors.map(d => [d.name, d.color]);
 const METAL = [['Хром', '#c8ccd0'], ['Латунь', '#c9a25a'], ['Чёрный', '#2a2a2a']];
 const STYLES = [['flat', 'Гладкий'], ['shaker', 'Рамочный'], ['mirror', 'Зеркало'], ['glass', 'Стекло']];
-const TYPES = [['wardrobe', 'Шкаф'], ['rack', 'Стеллаж'], ['nightstand', 'Тумба'], ['dresser', 'Комод'], ['tv', 'ТВ-тумба']];
+const TYPES = [['wardrobe', 'Шкаф'], ['rack', 'Стеллаж'], ['nightstand', 'Тумба'], ['dresser', 'Комод'], ['tv', 'ТВ-тумба'], ['kbase', 'Кухня: нижний модуль'], ['kwall', 'Кухня: верхний модуль'], ['ktall', 'Кухня: пенал']];
 
 // ── проекты: список в localStorage, текущий дублируется в 'mebel-v3' для production.html
 let { db, cur } = loadProjects();
@@ -152,7 +153,7 @@ let panelTimer = 0, panelNote = null;
 function renderWarn(full) {
   const w = document.getElementById('warn'), ready = full || panelKey() === kinKey;
   const calc = ready ? kinematicWarnings() : [], issues = ready ? buildIssues : [];
-  const others = proj && proj.multi ? dedupe(proj.mods.filter(m => m.i !== active).flatMap(m => m.spec.warnings.map(w => `${m.name}: ${w}`))) : [];
+  const others = proj ? dedupe([...(proj.multi ? proj.mods.filter(m => m.i !== active).flatMap(m => m.spec.warnings.map(w => `${m.name}: ${w}`)) : []), ...(proj.warnings || [])]) : [];
   const all = [...dedupe(spec.warnings), ...calc], note = panelNote;
   if (full) panelNote = null;
   w.innerHTML = '';
@@ -447,7 +448,8 @@ const globalDefs = () => {
       { k: 'depth', l: 'Глубина', min: r.depth[0], max: r.depth[1], step: 10, u: 'мм', frame: 1, hint: `Глубина корпуса без фасадов и ручек. Для этого типа: ${r.depth[0]}–${r.depth[1]} мм. От глубины зависит длина направляющих ящиков.` },
       { k: 'thickness', l: 'Толщина ЛДСП', seg: [[16, '16'], [18, '18'], [22, '22'], [25, '25']], scale: 1, hint: 'Толщина плиты корпуса. Меняет внутренние размеры и пильные размеры всех деталей.' },
       { k: 'joint', l: 'Крепёж корпуса', seg: [['confirmat', 'Конфирмат'], ['minifix', 'Эксцентрик'], ['dowel', 'Шкант']], hint: 'Конфирмат — стяжка 7×50, шляпка видна на боковинах. Эксцентрик (минификс) — штифт + стяжка Ø15, снаружи отверстий нет, плюс шкант для точности. Шкант — только шканты Ø8 (на клей).' },
-      { k: 'topType', l: 'Крышка', seg: [['inset', 'Между боковинами'], ['overlay', 'Накладная']], hint: 'Между боковинами — крышка встаёт между боковин, торцы боковин не видны сверху. Накладная — лежит сверху и может выступать (свес).' },
+      { k: 'topType', l: 'Крышка', seg: [['inset', 'Между боковинами'], ['overlay', 'Накладная'], ...(r.rails ? [['rails', 'Царги']] : [])], hint: 'Между боковинами — крышка встаёт между боковин, торцы боковин не видны сверху. Накладная — лежит сверху и может выступать (свес).' },
+      { k: 'railW', l: 'Ширина царги', min: 60, max: 200, step: 10, u: 'мм', when: () => P.topType === 'rails', hint: 'Две царги (передняя и задняя) вместо цельной крышки: под них крепится столешница.' },
       { k: 'topOverhang', l: 'Свес крышки', min: 0, max: 50, step: 1, u: 'мм', when: () => P.topType === 'overlay', hint: 'На сколько крышка выступает вперёд и в стороны.' },
       { k: 'base', l: 'Основание', seg: [['plinth', 'Цоколь'], ['legs', 'Ножки'], ['none', 'Нет']], frame: 1, scale: 1, hint: 'Цоколь — рама из ЛДСП под корпусом (отступ 50 мм от фасада). Ножки — регулируемые опоры. Нет — корпус стоит прямо на полу.' },
       { k: 'plinth', l: 'Высота основания', min: 40, max: 200, step: 5, u: 'мм', when: () => P.base !== 'none', scale: 1, hint: 'Высота цоколя или ножек. Чем выше основание, тем меньше внутренняя высота.' },
@@ -767,8 +769,36 @@ async function askAddModule() {
   });
   body.append(el('p', 'hint2', 'Новый корпус встанет справа от выбранного. Цвета возьмутся из текущего корпуса.'), types);
   if (!(await modal('Добавить модуль', body, { ok: 'Добавить' }))) return;
-  act(() => { const i = addModule(root, makePreset(type, keepColorsOf()), { name: typeLabel(type), after: active }); if (i >= 0) active = i; })();
+  act(() => { const i = addModule(root, makePreset(type, keepColorsOf()), { name: typeLabel(type), after: active, y: type === 'kwall' ? 1400 : 0, over: type === 'kwall' }); if (i >= 0) active = i; })();
   afterModuleChange(true);
+}
+async function editWorktop() {
+  const cur = normalizeWorktop(root.countertop);
+  let on = !!cur;
+  const wt = JSON.parse(JSON.stringify(cur || WORKTOP_DEFAULT));
+  const body = el('div', 'dbody wtbody');
+  const num = (obj, key, min, max) => Object.assign(el('input'), { type: 'number', value: obj[key], min, max, step: 1, onchange() { const v = Math.round(+this.value); obj[key] = Number.isFinite(v) && this.value !== '' ? Math.max(min, Math.min(max, v)) : obj[key]; this.value = obj[key]; } });
+  const lab = (t, inp) => { const l = el('label', '', t); l.append(inp); return l; };
+  const draw = () => {
+    body.textContent = '';
+    const cb = Object.assign(el('input'), { type: 'checkbox', checked: on }), head = el('label', 'wtrow'); cb.onchange = () => { on = cb.checked; draw(); };
+    head.append(cb, ' Столешница включена');
+    body.append(head, el('p', 'hint2', 'Лежит на подряд стоящих нижних модулях (без пенала и разрыва больше 100 мм) и считается по погонным метрам. Размеры вырезов считаются от левого и переднего края первой столешницы.'));
+    if (!on) return;
+    const row = el('div', 'wtrow'); row.append(lab('Толщина, мм', num(wt, 'T', 16, 60)), lab('Свес спереди, мм', num(wt, 'front', 0, 100)), lab('Свес по бокам, мм', num(wt, 'side', 0, 100))); body.append(row);
+    body.append(el('h4', '', 'Вырезы'));
+    wt.cutouts.forEach((c, i) => {
+      const r = el('div', 'wtcut'); r.append(el('b', '', (CUTOUT_PRESETS[c.kind] || CUTOUT_PRESETS.free).label), lab('Ширина', num(c, 'w', 20, 2000)), lab('Глубина', num(c, 'h', 20, 1000)), lab('От левого края', num(c, 'x', 0, 6000)), lab('От переднего края', num(c, 'y', 0, 1000)), lab('Радиус', num(c, 'r', 0, 100)));
+      const del = el('button', '', '×'); del.title = 'Убрать вырез'; del.onclick = () => { wt.cutouts.splice(i, 1); draw(); }; r.append(del); body.append(r);
+    });
+    const add = el('div', 'wtrow');
+    for (const [k, p] of Object.entries(CUTOUT_PRESETS)) { const b = el('button', '', '+ ' + p.label); b.disabled = wt.cutouts.length >= 12; b.onclick = () => { wt.cutouts.push({ kind: k, w: p.w, h: p.h, x: wt.cutouts.reduce((m, c) => Math.max(m, c.x + c.w + 50), 100), y: 60, r: p.r }); draw(); }; add.append(b); }
+    body.append(add);
+  };
+  draw();
+  if (!(await modal('Столешница', body, { ok: 'Применить', wide: true }))) return;
+  act(() => { if (on) root.countertop = wt; else delete root.countertop; })();
+  drawModules(); render(true);
 }
 function drawModules() {
   modsBox.textContent = '';
@@ -781,6 +811,12 @@ function drawModules() {
   });
   const add = el('button', 'modchip add', '+ Модуль'); add.title = moduleCount(root) >= 12 ? 'Не больше 12 модулей' : 'Добавить корпус справа от выбранного: кухня, гарнитур, стенка из нескольких шкафов';
   add.disabled = moduleCount(root) >= 12; add.onclick = askAddModule; strip.append(add);
+  const hasBase = list.some(m => cabinetOf(root, m.i).type === 'kbase');
+  if (hasBase || root.countertop) {
+    const wb = el('button', 'modchip' + (root.countertop ? ' on2' : ' add'), root.countertop ? 'Столешница ✓' : '+ Столешница');
+    wb.title = hasBase ? 'Столешница над нижними кухонными модулями: размеры, свесы, вырезы под мойку и варочную панель' : 'Нет нижних кухонных модулей: столешница появится, когда они будут добавлены';
+    wb.onclick = editWorktop; strip.append(wb);
+  }
   modsBox.append(strip);
   if (!multi) return;
   const cur = list[active], card = el('div', 'modcard');
@@ -794,8 +830,15 @@ function drawModules() {
   name.onchange = () => { const v = name.value.trim(); if (!v) { name.value = cur.name; return; } act(() => setModuleProps(root, active, { name: v }))(); drawModules(); };
   const row1 = el('div', 'modrow'); row1.append(name);
   const row2 = el('div', 'modrow');
-  if (active > 0) row2.append(field('Зазор слева, мм', cur.gap, 0, 2000, v => setModuleProps(root, active, { gap: v }), 'Расстояние до предыдущего модуля'));
+  if (active > 0) row2.append(field(cur.over ? 'Сдвиг вправо, мм' : 'Зазор слева, мм', cur.gap, 0, 2000, v => setModuleProps(root, active, { gap: v }), cur.over ? 'Смещение от левого края предыдущего модуля' : 'Расстояние до предыдущего модуля'));
   row2.append(field('Подъём над полом, мм', cur.y, 0, 3000, v => setModuleProps(root, active, { y: v }), 'Для навесных корпусов'));
+  let overRow = null;
+  if (active > 0) {
+    const lab = el('label', 'modover'), cb = Object.assign(el('input'), { type: 'checkbox', checked: cur.over });
+    cb.onchange = () => { act(() => setModuleProps(root, active, { over: cb.checked }))(); drawModules(); render(true); };
+    lab.append(cb, ' Над предыдущим модулем'); lab.title = 'Поставить над предыдущим корпусом (навесной шкаф над нижним), а не справа от него';
+    overRow = lab;
+  }
   const acts = el('div', 'modrow acts');
   const btn = (t, title, fn, dis) => { const b = el('button', '', t); b.title = title; b.disabled = !!dis; b.onclick = fn; acts.append(b); };
   const moved = dir => { act(() => { active = moveModule(root, active, dir); })(); afterModuleChange(false); };
@@ -803,7 +846,7 @@ function drawModules() {
   btn('→', 'Сдвинуть модуль вправо', () => moved(1), active === list.length - 1);
   btn('Копия', 'Дублировать модуль', () => { act(() => { const i = duplicateModule(root, active); if (i >= 0) active = i; })(); afterModuleChange(true); }, moduleCount(root) >= 12);
   btn('Удалить', 'Убрать модуль из проекта', () => { act(() => { removeModule(root, active); })(); afterModuleChange(true); });
-  card.append(row1, row2, acts); modsBox.append(card);
+  card.append(row1, row2); if (overRow) card.append(overRow); card.append(acts); modsBox.append(card);
 }
 
 // ── пошаговая сборка в 3D: степпер на плашке «Вид»
@@ -918,7 +961,7 @@ let down;
 stage.addEventListener('pointerdown', e => (down = [e.clientX, e.clientY]));
 stage.addEventListener('pointerup', e => {
   if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4) return;
-  const hit = pickAt(e), mi = hit ? hit.object.userData.mod || 0 : active;
+  const hit0 = pickAt(e), hit = hit0 && hit0.object.userData.mod === -1 ? null : hit0, mi = hit ? hit.object.userData.mod || 0 : active;
   const pi = hit && hit.object.userData.part, sc = hit && hit.object.userData.section;
   if (mi !== active) { active = mi; P = cabinetOf(root, mi); sel = 0; kinKey = ''; drawAll(); render(false); }
   selPartKey = pi !== undefined && spec.parts[pi] ? partIdOf(spec.parts[pi]) : null;
@@ -953,7 +996,7 @@ const info = (title, text) => { const b = el('div', 'dbody'); b.append(el('p', '
 
 // ── проекты
 const typeLabel = k => (TYPES.find(t => t[0] === k) || ['', ''])[1];
-const TYPE_INFO = { wardrobe: 'Штанги, полки, ящики; распашные двери или купе', rack: 'Открытые полки без дверей', nightstand: 'Невысокая тумба: ящики, полки, дверь', dresser: 'Широкая стопка ящиков', tv: 'Низкая и широкая, с нишами и ящиками' };
+const TYPE_INFO = { kbase: 'Нижний модуль на ножках: царги вместо крышки, полки или ящики, дверь', kwall: 'Навесной шкаф: неглубокий корпус на стену, дверь или подъёмный фасад', ktall: 'Пенал до потолка: полки и ящики, дверь', wardrobe: 'Штанги, полки, ящики; распашные двери или купе', rack: 'Открытые полки без дверей', nightstand: 'Невысокая тумба: ящики, полки, дверь', dresser: 'Широкая стопка ящиков', tv: 'Низкая и широкая, с нишами и ящиками' };
 const projDlg = document.getElementById('projDlg'), pm = document.getElementById('pm'), xm = document.getElementById('xm'), am = document.getElementById('am');
 const keepColors = () => ({ bodyColor: P.bodyColor, bodyName: P.bodyName, frontColor: P.frontColor, frontName: P.frontName, metalColor: P.metalColor });
 function drawHeader() {
@@ -1158,7 +1201,7 @@ function openCatalog() {
       grid('Модели фурнитуры', 'Что покупать: категория, вариант (например, soft/plain у петель), бренд, название, артикул, цена за упаковку (штанги и профили — за хлыст), штук в упаковке, длина хлыста. В проекте выбирается модель на категорию; артикулы заполните своими.', c.fittings, [['kind', 'Категория', 'select', '120px', Object.entries(KIND_LABELS)], ['variant', 'Вариант', 'select', '110px', VARIANT_OPTS], ['brand', 'Бренд', 'text', '80px'], ['name', 'Название', 'text', '1.4fr'], ['art', 'Артикул', 'text', '90px'], ['price', 'Цена', 'number', '70px'], ['pack', 'В уп.', 'number', '50px'], ['stockLen', 'Хлыст, мм', 'number', '70px'], ['url', 'Ссылка', 'text', '1fr']], { id: '', kind: 'screw', variant: '', brand: '', name: '', art: '', price: 0, pack: 1, stockLen: 0, url: '', params: {} }),
       paramsBlock(),
       fields('Фрезеровка фасадов и кромка стекла', 'Рамка рамочных фасадов и фасадов под стекло, четверть под стекло, фаска и углы стекла. Идут в чертёж детали, примечания и DXF.', HW_PARAM_DEFS.mill.map(([k, l]) => [l, c.milling, k])),
-      fields('Работы и наценка', '', [['Распил, за метр реза', c.works, 'cut'], ['Кромкование, за пог. м', c.works, 'edge'], ['Присадка, за отверстие', c.works, 'hole'], ['Сборка, % от материалов и фурнитуры', c.works, 'assembly'], ['Стекло, за м²', c.special, 'glass'], ['Зеркало, за м²', c.special, 'mirror'], ['Наценка, %', c, 'markup']]),
+      fields('Работы и наценка', '', [['Распил, за метр реза', c.works, 'cut'], ['Кромкование, за пог. м', c.works, 'edge'], ['Присадка, за отверстие', c.works, 'hole'], ['Сборка, % от материалов и фурнитуры', c.works, 'assembly'], ['Стекло, за м²', c.special, 'glass'], ['Зеркало, за м²', c.special, 'mirror'], ['Столешница, за пог. м', c.special, 'worktop'], ['Вырез в столешнице, за шт.', c.works, 'cutout'], ['Наценка, %', c, 'markup']]),
       grid('Складские остатки', 'Обрезки листов, которые уже есть в наличии. Раскрой кладёт детали на них первыми, в смету они не входят, обрезка у них не снимается. Материал выбирается из списка декоров, толщина должна совпадать с деталью.', c.stock, [['label', 'Материал', 'select', '150px', [...c.decors.map(d => `ЛДСП ${d.name}`), 'ХДФ']], ['T', 'Толщ.', 'number', '60px'], ['L', 'Длина', 'number', '1fr'], ['W', 'Ширина', 'number', '1fr'], ['qty', 'Шт.', 'number', '56px']], { label: `ЛДСП ${(c.decors[0] || { name: 'Белый' }).name}`, T: 18, L: 800, W: 600, qty: 1 }),
       fields('Раскрой', 'Пропил — ширина реза пилы; обпил — полоса, срезаемая по краю листа; остаток считается деловым от указанных размеров.', [['Пропил, мм', c.cut, 'kerf'], ['Обпил по краю, мм', c.cut, 'trim'], ['Деловой остаток: длиннее, мм', c.cut.minOffcut, 0], ['Деловой остаток: шире, мм', c.cut.minOffcut, 1]]),
     );

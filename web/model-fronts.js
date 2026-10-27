@@ -104,7 +104,10 @@ export function addFronts(ctx) {
       const ge = (mm.glassChamfer ? `, фаска ${mm.glassChamfer}×45°` : '') + (mm.glassCornerR ? `, углы R${mm.glassCornerR}` : '');
       part({ name: 'Стекло фасада', mat: 'glass', label: 'Стекло матовое', T: 4, plane: 'xy', L: w - 2 * (mm.frameW - mm.glassOverlap), W: h - 2 * (mm.frameW - mm.glassOverlap), c: [cx, cy, z - fT / 2 + 4], sec, group, notes: ['вставка в фасад, кромка шлифованная' + ge] });
     }
-    if (style === 'mirror') part({ name: 'Зеркало', mat: 'mirror', label: 'Зеркало', T: 4, plane: 'xy', L: w - 120, W: h - 120, c: [cx, cy, z + fT / 2 + 2], sec, group, notes: ['клеится на фасад, кромка шлифованная'] });
+    if (style === 'mirror') {
+      if (w - 120 >= 30 && h - 120 >= 30) part({ name: 'Зеркало', mat: 'mirror', label: 'Зеркало', T: 4, plane: 'xy', L: w - 120, W: h - 120, c: [cx, cy, z + fT / 2 + 2], sec, group, notes: ['клеится на фасад, кромка шлифованная'] });
+      else warnings.push(`Секция ${sec}: фасад ${Math.round(w)}×${Math.round(h)} мм слишком мал для зеркала, оно не поставлено`);
+    }
 
     if (!flap) {
       const left = kind === 'left', nh = hingeCount(h);
@@ -225,6 +228,7 @@ export function addFronts(ctx) {
       if (yb0 + bh > ya + h + 0.5) warnings.push(`Секция ${sec}: ящик ${Math.round(h)} мм слишком низкий для короба (нужно от 90 мм)`);
       const bt = 16, sideE = { w2: eH };
       const us = bh > 100 ? [25, bh - 25] : [bh / 2];
+      if (bw - 2 * bt < 60) warnings.push(`Секция ${sec}: ящик слишком узкий: стенки короба ${Math.round(bw - 2 * bt)} мм, на конфирмат нужно не меньше 60 мм (увеличьте ширину секции)`);
       const front = part({ name: 'Передняя стенка ящика', plane: 'xy', T: bt, label: body, L: bw - 2 * bt, W: bh, c: [c.cx, yb0 + bh / 2, zr0 - bt / 2], edges: { d2: eH }, sec, group });
       const back = part({ name: 'Задняя стенка ящика', plane: 'xy', T: bt, label: body, L: bw - 2 * bt, W: bh, c: [c.cx, yb0 + bh / 2, zr0 - rl + bt / 2], edges: { d2: eH }, sec, group });
       const yh = yb0 + Math.min(sl.mountY, bh / 2);

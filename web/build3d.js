@@ -49,6 +49,7 @@ export function build3D(THREE, spec, P, opts = {}) {
     back: new THREE.MeshStandardMaterial({ name: 'hdf', color: 0xe6e2da, roughness: 0.8 }),
     metal: new THREE.MeshStandardMaterial({ name: 'metall', color: P.metalColor, metalness: 0.4, roughness: 0.3 }),
     mirror: new THREE.MeshStandardMaterial({ name: 'zerkalo', color: 0xdfe6ea, metalness: 0.4, roughness: 0.05 }),
+    top: new THREE.MeshStandardMaterial({ name: 'stoleshnitsa', color: P.worktopColor || 0x6d6a66, roughness: 0.45 }),
     glass: new THREE.MeshStandardMaterial({ name: 'steklo', color: 0xcfe0e4, roughness: 0.05, transparent: true, opacity: 0.32 }),
   };
   const holeMats = {};
@@ -169,8 +170,14 @@ export function build3DProject(THREE, proj, view = {}, opts = {}) {
     c.traverse(o => { o.userData.mod = m.i; });
     return c;
   });
-  if (!proj.multi) return built[0];
+  const wt = proj.worktops && proj.worktops.length ? proj.worktops : null;
+  if (!proj.multi && !wt) return built[0];
   const grp = new THREE.Group();
   built.forEach((c, i) => { const m = proj.mods[i]; c.position.set(m.x * k, m.y * k, m.z * k); grp.add(c); });
+  if (wt) {
+    const c = build3D(THREE, { parts: wt, extras: [], hw: [], hwx: [], warnings: [], meta: proj.spec.meta }, { ...proj.mods[0].P, open: 0 }, opts);
+    c.traverse(o => { o.userData.mod = -1; });
+    grp.add(c);
+  }
   return grp;
 }

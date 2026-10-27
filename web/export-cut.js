@@ -8,7 +8,7 @@ const KIND = label => (/^(ЛДСП|МДФ|ХДФ)/.exec(label) || [, 'Матер
 const decorOf = label => label.replace(/^(ЛДСП|МДФ|ХДФ)\s*/, '').replace(/,.*$/, '').trim() || '—';
 
 /** Детали под раскрой: стекло и зеркало не режутся на пилах и в список не попадают. */
-export const cuttable = groups => groups.filter(g => g.mat !== 'glass' && g.mat !== 'mirror');
+export const cuttable = groups => groups.filter(g => g.mat !== 'glass' && g.mat !== 'mirror' && g.mat !== 'top');
 
 /**
  * CSV для импорта в сервисы раскроя (разделитель «;», UTF-8 с BOM). Размеры «пил.» — с вычетом кромки, «чист.» — готовые.

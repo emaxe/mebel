@@ -13,6 +13,9 @@ export const TYPE_RULES = {
   rack: { height: [600, 2600], depth: [250, 500], secW: [300, 1000], maxSec: 8, zone: true, doors: [], items: ['shelf', 'fixed', 'glass'], drawerFronts: 'inset', fills: ['shelves', 'empty'] },
   nightstand: { height: [400, 800], depth: [300, 550], secW: [300, 800], maxSec: 2, doors: ['none', 'left', 'right', 'flapDown'], items: ['shelf', 'fixed', 'glass', 'drawer', 'idrawer'], drawerFronts: 'overlay', fills: ['drawers2', 'drawers3', 'drawersShelf', 'idrawers', 'shelves', 'empty'] },
   dresser: { height: [600, 1300], depth: [350, 600], secW: [300, 1000], maxSec: 4, zone: true, doors: ['none', 'left', 'right', 'double'], items: ['shelf', 'fixed', 'drawer', 'idrawer'], drawerFronts: 'overlay', fills: ['drawers3', 'drawers4', 'drawers5', 'drawersShelf', 'idrawers', 'shelves', 'empty'] },
+  kbase: { height: [500, 1000], depth: [300, 700], secW: [150, 1000], maxSec: 3, rails: true, doors: ['none', 'left', 'right', 'double'], items: ['shelf', 'fixed', 'glass', 'drawer', 'idrawer'], drawerFronts: 'overlay', fills: ['shelves1', 'shelves', 'drawers3', 'drawers2', 'drawersShelf', 'idrawers', 'empty'] },
+  kwall: { height: [300, 1000], depth: [200, 450], secW: [150, 1000], maxSec: 3, doors: ['none', 'left', 'right', 'double', 'flapUp'], items: ['shelf', 'fixed', 'glass'], drawerFronts: 'inset', fills: ['shelves1', 'shelves', 'empty'] },
+  ktall: { height: [1800, 2600], depth: [400, 700], secW: [300, 800], maxSec: 2, doors: ['none', 'left', 'right', 'double'], items: ['shelf', 'fixed', 'glass', 'drawer', 'idrawer'], drawerFronts: 'overlay', fills: ['shelves', 'drawersShelves', 'drawers3', 'idrawers', 'empty'] },
   tv: { height: [300, 700], depth: [300, 550], secW: [300, 1000], maxSec: 4, zone: true, doors: ['none', 'left', 'right', 'double', 'flapDown', 'flapUp'], items: ['shelf', 'fixed', 'glass', 'drawer', 'idrawer'], drawerFronts: 'overlay', fills: ['shelves1', 'shelves', 'drawers2', 'idrawers', 'empty'] },
 };
 export const rulesOf = P => TYPE_RULES[P.type] || TYPE_RULES.wardrobe;
@@ -33,13 +36,16 @@ export function fillItems(kind, P) {
 }
 
 // ── presets
-export const BASE = { cutouts: [], fittings: {}, slide: 'ball', hinge: 'soft', push: false, wallFix: false, joint: 'confirmat', thickness: 18, backType: 'groove', cornice: false, hatShelf: 350, doorType: 'hinged', slidingDoors: 3, slidingStyle: 'mirror', frontT: 16, handle: 'bar', handleSize: 128, handleOrient: 'v', edgeFront: 2, edgeHidden: 0.4, shelfSetback: 20, open: 0, hideDoors: false, showHoles: false, topOverhang: 0, fit: true, fitMode: 'prop' };
+export const BASE = { railW: 100, cutouts: [], fittings: {}, slide: 'ball', hinge: 'soft', push: false, wallFix: false, joint: 'confirmat', thickness: 18, backType: 'groove', cornice: false, hatShelf: 350, doorType: 'hinged', slidingDoors: 3, slidingStyle: 'mirror', frontT: 16, handle: 'bar', handleSize: 128, handleOrient: 'v', edgeFront: 2, edgeHidden: 0.4, shelfSetback: 20, open: 0, hideDoors: false, showHoles: false, topOverhang: 0, fit: true, fitMode: 'prop' };
 const sec = (width, door, fill, o = {}) => ({ width, door, fill, split: 0, frontStyle: 'flat', ...o });
 export const PRESETS = {
   wardrobe: { wallFix: true, height: 2300, depth: 600, base: 'plinth', plinth: 80, topType: 'inset', sections: [sec(500, 'left', 'drawersShelves'), sec(800, 'double', 'rod'), sec(500, 'right', 'rodShelves')] },
   rack: { wallFix: true, height: 1800, depth: 350, base: 'plinth', plinth: 60, topType: 'inset', handle: 'none', sections: [sec(600, 'none', 'shelves'), sec(600, 'none', 'shelves'), sec(600, 'none', 'shelves')] },
   nightstand: { height: 550, depth: 420, base: 'legs', plinth: 100, topType: 'overlay', topOverhang: 15, handleOrient: 'h', sections: [sec(450, 'none', 'drawers2')] },
   dresser: { height: 850, depth: 450, base: 'plinth', plinth: 60, topType: 'overlay', topOverhang: 15, handleOrient: 'h', sections: [sec(500, 'none', 'drawers4'), sec(500, 'none', 'drawers4')] },
+  kbase: { wallFix: true, height: 820, depth: 560, base: 'legs', plinth: 100, topType: 'rails', backType: 'overlay', handleOrient: 'h', sections: [sec(600, 'double', 'shelves1')] },
+  kwall: { wallFix: true, height: 720, depth: 320, base: 'none', plinth: 0, topType: 'inset', backType: 'overlay', sections: [sec(600, 'double', 'shelves1')] },
+  ktall: { wallFix: true, height: 2200, depth: 560, base: 'legs', plinth: 100, topType: 'inset', backType: 'overlay', sections: [sec(600, 'double', 'shelves')] },
   tv: { height: 450, depth: 400, base: 'legs', plinth: 120, topType: 'overlay', topOverhang: 10, handle: 'profile', sections: [sec(500, 'left', 'shelves1'), sec(700, 'none', 'shelves1'), sec(500, 'none', 'drawers2')] },
 };
 export function makePreset(type, keep = {}) {
@@ -89,6 +95,7 @@ export function normalizeCutouts(list) {
 }
 
 /** Bring a project to what its type supports: ranges, doors, antresol, items, front mode. Idempotent. */
+import { normalizeWorktop } from './worktop.js';
 export const SCHEMA = 2;
 const MIGRATIONS = [P => P, P => P];
 export const MAX_MODULES = 12;
@@ -111,10 +118,12 @@ export function normalizeModules(P) {
   for (const m of P.modules) {
     m.name = typeof m.name === 'string' && m.name.trim() ? m.name.trim().slice(0, 40) : 'Модуль';
     m.gap = int(m.gap, 0, 2000); m.y = int(m.y, 0, 3000);
-    delete m.P.modules; delete m.P.modName; delete m.P.modY;
+    if (m.over) m.over = true; else delete m.over;
+    delete m.P.modules; delete m.P.modName; delete m.P.modY; delete m.P.countertop;
     normalize(m.P);
   }
   if (!P.modules.length) delete P.modules;
+  if (P.countertop !== undefined) { const w = normalizeWorktop(P.countertop); if (w) P.countertop = w; else delete P.countertop; }
   if (typeof P.modName === 'string' && P.modName.trim()) P.modName = P.modName.trim().slice(0, 40); else delete P.modName;
   if (P.modY !== undefined) { P.modY = int(P.modY, 0, 3000); if (!P.modY) delete P.modY; }
   return P;
@@ -137,6 +146,8 @@ export function normalize(P) {
   P.push = !!P.push && P.handle === 'none'; // push-to-open работает только без ручек
   if (P.push) { if (P.hinge !== 'plain') P.hinge = 'plain'; if (P.slide === 'ballSoft') P.slide = 'ball'; } // доводчик гасит толчок
   if (!R.cornice) P.cornice = false;
+  if (!['inset', 'overlay', 'rails'].includes(P.topType) || (P.topType === 'rails' && !R.rails)) P.topType = 'inset';
+  P.railW = clamp(Number.isFinite(+P.railW) ? Math.round(+P.railW) : 100, 60, 200);
   P.sections = (P.sections || []).slice(0, R.maxSec);
   if (!P.sections.length) P.sections = [newSection(P)];
   if (P.base !== 'none') P.plinth = clamp(P.plinth, 40, Math.max(40, P.height - 200)); // основание не должно съедать изделие: внутри остаётся не меньше ~150 мм

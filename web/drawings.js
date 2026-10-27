@@ -40,7 +40,7 @@ export function frontView(spec, P, { fronts = false } = {}) {
     k.rect(X(p.c[0] - sx / 2), Y(p.c[1] + sy / 2), sx * sc, sy * sc, fill, stroke, dash);
   };
   const isFront = p => p.mat === 'front' || ((p.mat === 'glass' || p.mat === 'mirror') && p.group && p.group.type !== 'slide');
-  const outer = p => /^(Боковина (левая|правая)|Крышка$|Дно$|Цоколь$|Карниз$)/.test(p.name);
+  const outer = p => /^(Боковина (левая|правая)|Крышка$|Царга (задняя|передняя)$|Дно$|Цоколь$|Карниз$)/.test(p.name);
   const parts = spec.parts;
   if (!fronts) {
     for (const p of parts) if (!p.group && p.mat === 'back') box(p, FILL.back, '#cfc9bc');

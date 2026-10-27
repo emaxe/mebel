@@ -26,6 +26,11 @@ export function estimate(spec, groups, N, E, cat, P = {}) {
     sheetLines.push({ name: `${g.label}: ${g.name} ${g.L}×${g.W}`, qty: money(area), unit: 'м²', price: p || null, sum: money(area * p) });
     if (!p) missing.push(g.label);
   }
+  for (const g of groups) if (g.mat === 'top') {
+    const m = (g.L * g.qty) / 1000, p = cat.special.worktop;
+    sheetLines.push({ name: `${g.label}, глубина ${Math.round(g.W)} мм`, qty: money(m), unit: 'пог. м', price: p || null, sum: money(m * p) });
+    if (!p) missing.push('столешница');
+  }
   const mat = sec('Материалы', sheetLines);
 
   // кромка с запасом 10%
@@ -47,11 +52,13 @@ export function estimate(spec, groups, N, E, cat, P = {}) {
   const cutM = N.sheets.reduce((a, s) => a + s.cutLen, 0) / 1000;
   const edgeM = E.reduce((a, e) => a + e.m, 0);
   const holes = groups.reduce((a, g) => a + g.holes.length * g.qty, 0);
+  const cuts = groups.reduce((a, g) => a + (g.mat === 'top' ? (g.cutouts || []).length * g.qty : 0), 0);
   const w = cat.works, asm = (mat.sum + hw.sum) * (w.assembly / 100);
   const works = sec('Работы', [
     { name: 'Распил', qty: money(cutM), unit: 'м реза', price: w.cut, sum: money(cutM * w.cut) },
     { name: 'Кромкование', qty: money(edgeM), unit: 'пог. м', price: w.edge, sum: money(edgeM * w.edge) },
     { name: 'Присадка', qty: holes, unit: 'отв.', price: w.hole, sum: money(holes * w.hole) },
+    ...(cuts ? [{ name: 'Вырезы в столешнице', qty: cuts, unit: 'шт', price: w.cutout, sum: money(cuts * w.cutout) }] : []),
     { name: `Сборка (${w.assembly}% от материалов и фурнитуры)`, qty: 1, unit: '', price: money(asm), sum: money(asm) },
   ]);
 
