@@ -1,9 +1,14 @@
 import { buildSpec, isDrawer } from './model.js';
 import { build3D } from './build3d.js';
-import { toCSV, toDXF } from './export.js';
-import { autoFix, kinProblems } from './autofix.js';
-import { FILL_LABELS, rulesOf, makePreset, normalize, fillItems, innerH, autoShelves, stepShelves, autoDrawers, packDrawers, redistribute, fitSections, clamp } from './rules.js';
-import { loadCatalog, saveCatalog, DEFAULT_CATALOG, CATALOG_KEY, catalogHooks } from './catalog.js';
+import { toCSV, toDXF, groupParts, nest } from './export.js';
+import { checkBuild, panelIssues } from './check.js';
+import { assemblySteps } from './assembly.js';
+import { modelsFor, selKey, variantOf, resolveHw, KIND_LABELS } from './fittings.js';
+import { HW_PARAM_DEFS, HW_DEFAULTS } from './hwparams.js';
+import { orientLines } from './partinfo.js';
+import { autoFixAsync, kinProblems } from './autofix.js';
+import { MIN_DRAWER_H, FILL_LABELS, rulesOf, makePreset, normalize, fillItems, innerH, autoShelves, stepShelves, autoDrawers, packDrawers, redistribute, fitSections, clamp } from './rules.js';
+import { loadCatalog, saveCatalog, sanitizeCatalog, sheetFor, isTextured, DEFAULT_CATALOG, CATALOG_KEY, catalogHooks } from './catalog.js';
 import { loadProjects, saveProjects, newId, uniqueName, projectFile, parseProjectFile, hooks, PROJECTS_KEY, CURRENT_KEY, LEGACY_KEY, NAME_KEY } from './projects.js';
 import { putThumb, getThumb, getLocalThumb, delThumb, setRemote } from './thumbs.js';
 import { createApi } from './api.js';
@@ -26,7 +31,8 @@ let placeholder = false;
 const usePlaceholder = () => { placeholder = true; cur = newId(); db[cur] = { name: 'Новый проект', updated: Date.now(), P: makePreset('wardrobe') }; };
 if (!cur) usePlaceholder();
 let P = normalize(db[cur].P);
-let sel = 0, model, spec, outline;
+P.asmStep = 0; // пошаговая сборка в 3D — режим просмотра, при открытии проекта выключен
+let sel = 0, model, spec, outline, asmSteps = [], hwp;
 let sync = null, account = null; // сервер необязателен: без него приложение остаётся локальным
 const savedEl = document.getElementById('saved');
 let savedTimer;
@@ -50,7 +56,7 @@ const beginEdit = () => { if (editing === null) { editing = JSON.stringify(P); s
 const endEdit = () => { if (editing === null) return; if (JSON.stringify(P) === editing) hist.pop(); editing = null; syncUndo(); };
 const snap = () => { stack(hist, JSON.stringify(P)); redoSt.length = 0; syncUndo(); };
 const restore = j => {
-  const keep = { open: P.open, hideDoors: P.hideDoors, showHoles: P.showHoles };
+  const keep = { open: P.open, hideDoors: P.hideDoors, showHoles: P.showHoles, asmStep: P.asmStep };
   P = normalize({ ...JSON.parse(j), ...keep }); sel = Math.min(sel, P.sections.length - 1); kinKey = '';
   drawAll(); render(true); syncUndo();
 };
@@ -77,40 +83,72 @@ const hasShelves = () => items().some(i => i.type === 'shelf' || i.type === 'gla
 const hasMoving = () => hasDoors() || hasDrawers();
 
 // ── kinematic warnings: what stops when everything is opened (cached until the construction changes)
-let kinKey = '', kinWarn = [], fixNote = null;
+// раскрой нужен панели, чтобы сказать «деталь не помещается на лист» (листы и обрезка — из справочника)
+const nestFor = spec => nest(groupParts(spec), { sheetFor: (l, T) => sheetFor(cat, l, T), textured: l => isTextured(cat, l), kerf: cat.cut.kerf, trim: cat.cut.trim, minOffcut: cat.cut.minOffcut });
+let kinKey = '', kinWarn = [], buildIssues = [], fixNote = null;
+/** Одинаковые строки сворачиваются в одну с числом повторов: «… (×3)». */
+const dedupe = list => { const m = new Map(); for (const t of list) m.set(t, (m.get(t) || 0) + 1); return [...m].map(([t, n]) => (n > 1 ? `${t} (×${n})` : t)); };
+/** Ключ конструкции: что не влияет на панель замечаний (вид и цвета), в него не входит. */
+const panelKey = () => { const { open, hideDoors, showHoles, asmStep, bodyColor, bodyName, frontColor, frontName, metalColor, ...rest } = P; return JSON.stringify(rest); };
 function kinematicWarnings() {
-  const { open, hideDoors, showHoles, bodyColor, bodyName, frontColor, frontName, metalColor, ...rest } = P;
-  const key = JSON.stringify(rest);
+  const key = panelKey();
   if (key === kinKey) return kinWarn;
   kinKey = key;
-  kinWarn = kinProblems(spec).map(k => k.text);
+  kinWarn = dedupe(kinProblems(spec).map(k => k.text));
+  // проверка собираемости: ошибки присадки, пересечения, висящие детали (кинематику показывает своя часть панели)
+  try { buildIssues = dedupe(panelIssues(checkBuild(spec, P, { skipKin: true, hw: hwp, N: nestFor(spec) })).map(f => (f.level === 'error' ? '✕ ' : '! ') + f.text)); } catch (e) { buildIssues = []; console.error(e); }
+  if (buildIssues.length > 6) buildIssues = [...buildIssues.slice(0, 6), `…и ещё ${buildIssues.length - 6}`];
   if (kinWarn.length > 6) kinWarn = [...kinWarn.slice(0, 6), `…и ещё ${kinWarn.length - 6}`];
   return kinWarn;
 }
-function fixAll() {
-  snap();
-  fixNote = autoFix(P);
+let fixing = false;
+async function fixAll() {
+  if (fixing) return;
+  fixing = true; snap();
+  const btn = document.querySelector('.fixbtn'); if (btn) { btn.disabled = true; btn.textContent = 'Исправляю…'; }
+  try { fixNote = await autoFixAsync(P, { hw: hwp }); } finally { fixing = false; }
+  if (fixNote.partial) fixNote.log.push('время подбора вышло: нажмите ещё раз, чтобы продолжить');
   kinKey = '';
   drawAll(); render(false);
 }
 
+let panelTimer = 0, panelNote = null;
+function renderWarn(full) {
+  const w = document.getElementById('warn'), ready = full || panelKey() === kinKey;
+  const calc = ready ? kinematicWarnings() : [], issues = ready ? buildIssues : [];
+  const all = [...dedupe(spec.warnings), ...calc], note = panelNote;
+  if (full) panelNote = null;
+  w.innerHTML = '';
+  if (note && note.log.length) { const d = el('div', 'fixed'); d.textContent = 'Исправлено: ' + note.log.join('; '); w.append(d); }
+  const has = all.length > 0 || issues.length > 0;
+  if (note && !note.log.length && has) w.append(el('div', 'fixed', 'Автоматически исправить не удалось — измените параметры вручную.'));
+  all.forEach(x => w.append(el('div', '', x)));
+  issues.forEach(x => w.append(el('div', '', x)));
+  if (!ready) w.append(el('div', 'hint2', 'Проверяю конструкцию…'));
+  if (has) { const b = el('button', 'fixbtn', 'Исправить автоматически'); b.title = 'Раздвинет перекрывающиеся элементы, сдвинет полки от петель, подберёт ручки и фасады так, чтобы всё открывалось'; b.onclick = fixAll; w.append(b); }
+  w.style.display = w.childNodes.length ? '' : 'none';
+}
 function render(frame) {
   normalize(P);
   sel = Math.min(sel, P.sections.length - 1);
-  spec = buildSpec(P);
+  hwp = resolveHw(cat, P);
+  spec = buildSpec(P, { hw: hwp });
   save();
-  model = build3D(THREE, spec, P);
+  let asm = null;
+  if (P.asmStep > 0) {
+    asmSteps = assemblySteps(spec, groupParts(spec), P);
+    P.asmStep = clamp(P.asmStep, 1, Math.max(1, asmSteps.length));
+    asm = { shown: new Set(asmSteps.slice(0, P.asmStep).map(s => s.stage)), current: asmSteps[P.asmStep - 1].stage };
+  }
+  model = build3D(THREE, spec, P, { asm });
   stage.setObject(model, { keepCamera: !frame, floorY: 0 });
+  drawAsmBar();
   const m = spec.meta;
   document.getElementById('dims').textContent = `${Math.round(m.W)} × ${P.height} × ${P.depth} мм · деталей: ${spec.parts.length}`;
   drawHeader(); scheduleThumb();
-  const w = document.getElementById('warn'), all = [...spec.warnings, ...kinematicWarnings()], note = fixNote; fixNote = null;
-  w.innerHTML = '';
-  if (note && note.log.length) { const d = el('div', 'fixed'); d.textContent = 'Исправлено: ' + note.log.join('; '); w.append(d); }
-  if (note && !note.log.length && all.length) w.append(el('div', 'fixed', 'Автоматически исправить не удалось — измените параметры вручную.'));
-  all.forEach(x => w.append(el('div', '', x)));
-  if (all.length) { const b = el('button', 'fixbtn', 'Исправить автоматически'); b.title = 'Раздвинет перекрывающиеся элементы, сдвинет полки от петель, подберёт ручки и фасады так, чтобы всё открывалось'; b.onclick = fixAll; w.append(b); }
-  w.style.display = w.childNodes.length ? '' : 'none';
+  if (fixNote) { panelNote = fixNote; fixNote = null; }
+  renderWarn(false); // сразу то, что считается мгновенно; кинематика, проверка и раскрой — после паузы, пока тянут ползунок
+  clearTimeout(panelTimer); panelTimer = setTimeout(() => renderWarn(true), 200);
   document.querySelectorAll('[data-when]').forEach(e => (e.style.display = e._when() ? '' : 'none'));
   highlight();
 }
@@ -137,6 +175,11 @@ function control(c, obj, onChange) {
     const cb = Object.assign(el('input'), { type: 'checkbox', checked: !!obj[c.k] });
     cb.onchange = () => { if (!c.nohist) beginEdit(); const old = obj[c.k]; obj[c.k] = cb.checked; onChange(c, false, old); if (!c.nohist) endEdit(); };
     row.append(cb);
+  } else if (c.sel) {
+    const s = el('select');
+    c.sel.forEach(([v, l]) => s.append(new Option(l, v, false, obj[c.k] === v)));
+    s.onchange = () => { if (!c.nohist) beginEdit(); const old = obj[c.k]; obj[c.k] = s.value; onChange(c, false, old); if (!c.nohist) endEdit(); };
+    row.append(s);
   } else if (c.seg || c.sw) {
     const wrap = el('div', c.seg ? 'seg' : 'sw');
     (c.seg || c.sw).forEach(([a, b]) => {
@@ -158,6 +201,59 @@ function control(c, obj, onChange) {
   return row;
 }
 
+// ── вырезы в деталях: список карточек, правка по индексу (после render список пересоздаётся нормализацией)
+function cutoutsEditor() {
+  const box = el('div', 'cutbox');
+  const sample = name => spec && spec.parts.find(p => p.name === name && !p.group);
+  const names = () => [...new Set((spec ? spec.parts : []).filter(p => !p.group).map(p => p.name))];
+  const edit = (i, key, val) => { act(() => { if (P.cutouts[i]) P.cutouts[i][key] = val; })(); render(false); draw(); };
+  const num = (i, key, label, hint) => {
+    const r = el('label', 'cutf'), inp = Object.assign(el('input'), { type: 'number', value: P.cutouts[i][key], step: 'any' });
+    inp.onchange = () => edit(i, key, +inp.value);
+    r.append(el('span', '', label), inp); if (hint) r.title = hint; return r;
+  };
+  const draw = () => {
+    box.innerHTML = '';
+    box.append(el('div', 'hint2', 'Вырезы под розетки, кабели, трубы и плинтус. Идут в задание, чертёж детали, DXF и 3D. Вырез — прямоугольник с центром в точке (X, Y), выемка — угол детали. Координаты в системе детали (см. подсказку под выбором).'));
+    P.cutouts.forEach((c, i) => {
+      const card = el('div', 'cutcard'), top = el('div', 'cutrow');
+      const part = el('select'); [...new Set([c.part, ...names()])].forEach(n => part.append(new Option(n, n, false, n === c.part))); part.onchange = () => edit(i, 'part', part.value);
+      const kind = el('select'); [['hole', 'Вырез'], ['notch', 'Выемка в углу']].forEach(([v, l]) => kind.append(new Option(l, v, false, v === c.kind))); kind.onchange = () => edit(i, 'kind', kind.value);
+      const del = el('button', 'x', '✕'); del.title = 'Удалить вырез'; del.onclick = () => { act(() => P.cutouts.splice(i, 1))(); render(false); draw(); };
+      top.append(part, kind, del); card.append(top);
+      const sp = sample(c.part);
+      card.append(el('div', 'hint2', sp ? `Деталь ${Math.round(sp.L)}×${Math.round(sp.W)} мм (Ш — длина, Д — ширина). ${orientLines(sp)[0]}` : 'Такой детали в изделии сейчас нет: вырез не применится.'));
+      const row = el('div', 'cutrow');
+      row.append(num(i, 'w', c.kind === 'notch' ? 'Размер по Ш, мм' : 'Ширина, мм'), num(i, 'h', c.kind === 'notch' ? 'Размер по Д, мм' : 'Высота, мм'), num(i, 'r', 'Радиус, мм', 'Скругление углов выреза или внутреннего угла выемки'));
+      if (c.kind === 'notch') {
+        const cs = el('select'); [['w1d1', 'угол Ш1·Д1'], ['w2d1', 'угол Ш2·Д1'], ['w1d2', 'угол Ш1·Д2'], ['w2d2', 'угол Ш2·Д2']].forEach(([v, l]) => cs.append(new Option(l, v, false, v === c.corner))); cs.onchange = () => edit(i, 'corner', cs.value);
+        row.append(cs);
+      } else row.append(num(i, 'u', 'Центр от Ш1, мм', 'Расстояние от торца Ш1 до центра выреза вдоль длины'), num(i, 'v', 'Центр от Д1, мм', 'Расстояние от кромки Д1 до центра выреза вдоль ширины'));
+      row.append(num(i, 'sec', 'Секция (0 — везде)'));
+      card.append(row); box.append(card);
+    });
+    const add = el('button', 'mini', '+ Добавить вырез');
+    add.onclick = () => act(() => {
+      const name = names().includes('Задняя стенка') ? 'Задняя стенка' : names()[0] || 'Задняя стенка', sp = sample(name);
+      P.cutouts.push({ part: name, sec: 0, kind: 'hole', w: 60, h: 60, r: 10, u: sp ? sp.L / 2 : 100, v: sp ? sp.W / 2 : 100, corner: 'w1d1' });
+      render(false); draw();
+    })();
+    box.append(add);
+  };
+  draw();
+  return box;
+}
+
+// выбор модели фурнитуры по категориям: строка появляется, если категория есть в изделии и в справочнике больше одной модели
+function fittingRows() {
+  const rows = [], keys = new Set((cat.fittings || []).map(f => selKey(f.kind, f.variant)));
+  for (const key of keys) {
+    const [kind, variant = ''] = key.split(':'), list = modelsFor(cat, kind, variant);
+    if (list.length < 2) continue;
+    rows.push({ obj: 'fittings', k: key, l: `Модель: ${KIND_LABELS[kind] || kind}${variant ? ' · ' + variant : ''}`, sel: list.map(m => [m.id, `${m.brand ? m.brand + ' ' : ''}${m.name || KIND_LABELS[kind]}${m.art ? ' (' + m.art + ')' : ''}`]), when: () => (spec.hwx || []).some(e => e.kind === kind && variantOf(e, P) === variant), hint: 'Модель попадёт в список покупок и смету. Список моделей и цены — в справочнике.' });
+  }
+  return rows;
+}
 // ── global settings (ranges and visibility follow the furniture type)
 const globalDefs = () => {
   const r = R();
@@ -187,6 +283,14 @@ const globalDefs = () => {
       { k: 'handleSize', l: 'Межосевое ручки', seg: [[96, '96'], [128, '128'], [160, '160'], [192, '192'], [256, '256']], when: () => hasMoving() && P.handle === 'bar', hint: 'Расстояние между центрами крепёжных отверстий скобы.' },
       { k: 'handleOrient', l: 'Ручки на дверях', seg: [['v', 'Вертикально'], ['h', 'Горизонтально']], when: () => hasHingedDoors() && P.handle !== 'none' && P.handle !== 'knob', hint: 'Направление скобы или профиля на распашных дверях. На ящиках ручки всегда горизонтальные.' },
     ], hasMoving],
+    ['Фурнитура', [
+      { k: 'slide', l: 'Направляющие ящиков', seg: [['ball', 'Шариковые'], ['ballSoft', 'С доводчиком'], ['hidden', 'Скрытые'], ['roller', 'Роликовые']], when: hasDrawers, hint: 'Скрытые полного выдвижения: короб уже на 42 мм, ход 100%. Роликовые: проще и дешевле, ход 75%. С доводчиком: плавное закрывание.' },
+      { k: 'hinge', l: 'Петли', seg: [['soft', '110° с доводчиком'], ['plain', '110° без'], ['wide', '165°']], when: hasHingedDoors, hint: '165° открывают дверь почти до боковины; соседняя дверь может мешать, предупреждения покажут.' },
+      { k: 'push', l: 'Push-to-open', tog: 1, when: () => P.handle === 'none' && hasMoving(), hint: 'Открывание нажатием: на двери ставится толкатель, ящики идут на направляющих push-to-open; петли без доводчика.' },
+      { k: 'wallFix', l: 'Крепление к стене', tog: 1, hint: 'Анкерные уголки сзади под крышкой: высокое изделие не опрокинется.' },
+      ...fittingRows(),
+    ]],
+    ['Вырезы', [{ custom: cutoutsEditor }]],
     ['Кромка', [
       { k: 'edgeFront', l: 'Лицевые торцы', seg: [[0.4, '0,4'], [1, '1'], [2, '2']], hint: 'Толщина кромки ПВХ на видимых торцах. Кромка 1 мм и толще вычитается из пильного размера.' },
       { k: 'edgeHidden', l: 'Скрытые торцы', seg: [[0, 'Нет'], [0.4, '0,4'], [1, '1']], hint: 'Кромка на торцах, которых не видно.' },
@@ -205,6 +309,7 @@ const viewDefs = () => [
   { nohist: 1, k: 'showHoles', l: 'Показать присадку (отверстия)', tog: 1, hint: 'Цветные маркеры отверстий: Ø35 — чашки петель, Ø7 и Ø5 — конфирматы и полкодержатели.' },
 ];
 function onGlobal(c, live, old) {
+  if (['push', 'handle', 'hinge', 'slide'].includes(c.k)) { normalize(P); drawGlobal(); }
   if (c.scale && P.fit && old !== undefined) fitSections(P, innerH({ ...P, [c.k]: old }), innerH(P), P.fitMode);
   render(!live && (c.frame || c.k === 'cornice'));
   if (c.rebuild || c.scale) drawSections();
@@ -369,7 +474,7 @@ function drawSections() {
     y.onchange = act(() => { it.y = +y.value; drawSections(); render(false); });
     rw.append(t, y);
     if (isDrawer(it.type)) {
-      const h = Object.assign(el('input'), { type: 'number', value: it.h, step: 10, min: 80, max: 500, title: 'Высота фасада ящика, мм' });
+      const h = Object.assign(el('input'), { type: 'number', value: it.h, step: 10, min: MIN_DRAWER_H, max: 500, title: 'Высота фасада ящика, мм' });
       h.onchange = act(() => { it.h = +h.value; drawSections(); render(false); });
       rw.append(h);
     } else rw.append(el('span'));
@@ -404,7 +509,7 @@ function drawSections() {
     const shelfMode = AF.mode === 'even' || AF.mode === 'step' || AF.mode === 'redist', dMode = AF.mode === 'dEq' || AF.mode === 'dGr';
     if (AF.mode === 'even') card.append(af({ k: 'n', l: 'Количество полок', min: 1, max: 12, step: 1, hint: 'Сколько съёмных полок должно быть в секции.' }));
     if (AF.mode === 'step') card.append(af({ k: 'step', l: 'Шаг между полками (просвет)', min: 150, max: 600, step: 10, u: 'мм', hint: 'Свободная высота между соседними полками.' }));
-    if (dMode) { card.append(af({ k: 'n', l: 'Количество ящиков', min: 1, max: 10, step: 1, hint: 'Сколько ящиков в стопке. Высота ограничена 80–500 мм на ящик.' })); card.append(af({ k: 'zone', l: 'Высота зоны ящиков (снизу)', min: 160, max: H, step: 10, u: 'мм', hint: 'До какой высоты от дна секции тянется стопка ящиков.' })); }
+    if (dMode) { card.append(af({ k: 'n', l: 'Количество ящиков', min: 1, max: 10, step: 1, hint: 'Сколько ящиков в стопке. Высота ограничена ${MIN_DRAWER_H}–500 мм на ящик.' })); card.append(af({ k: 'zone', l: 'Высота зоны ящиков (снизу)', min: 160, max: H, step: 10, u: 'мм', hint: 'До какой высоты от дна секции тянется стопка ящиков.' })); }
     if (shelfMode) card.append(af({ k: 's32', l: 'Система 32 (высоты кратны 32 мм)', tog: 1, hint: 'Высоты полок привязываются к шагу 32 мм, чтобы отверстия полкодержателей ложились в общий ряд.' }));
     card.append(af({ k: 'all', l: 'Ко всем секциям', tog: 1, hint: 'Применить к каждой секции изделия, а не только к выбранной.' }));
     const acts2 = el('div', 'acts');
@@ -435,16 +540,38 @@ function drawSections() {
 function select(i) { sel = i; drawSections(); highlight(); }
 
 function drawGlobal() {
-  const root = document.getElementById('controls'); root.innerHTML = '';
+  const root = document.getElementById('controls');
+  const was = new Map([...root.querySelectorAll('details')].map(d => [d.querySelector('summary').textContent, d.open]));
+  root.innerHTML = '';
   for (const [title, rows, groupWhen] of globalDefs()) {
-    const d = el('details'); d.open = title === 'Корпус';
+    const d = el('details'); d.open = was.has(title) ? was.get(title) : title === 'Корпус';
     if (groupWhen) { d.dataset.when = 1; d._when = groupWhen; }
     d.append(el('summary', '', title));
-    rows.forEach(c => d.append(control(c, P, onGlobal)));
+    rows.forEach(c => d.append(c.custom ? c.custom() : control(c, c.obj === 'fittings' ? (P.fittings || (P.fittings = {})) : P, onGlobal)));
     root.append(d);
   }
   const v = document.getElementById('view'); v.innerHTML = '';
   viewDefs().forEach(c => v.append(control(c, P, () => render(false))));
+  v.append(asmBox); drawAsmBar();
+}
+
+// ── пошаговая сборка в 3D: степпер на плашке «Вид»
+const asmBox = el('div', 'asmbox');
+function drawAsmBar() {
+  asmBox.innerHTML = '';
+  if (!P.asmStep) {
+    const b = el('button', 'asmbtn', 'Сборка по шагам'); b.title = 'Показать, как собирается изделие: деталь за деталью, текущий шаг подсвечен';
+    b.onclick = () => { P.asmStep = 1; render(false); };
+    asmBox.append(b); return;
+  }
+  const n = asmSteps.length, s = asmSteps[P.asmStep - 1];
+  if (!s) return;
+  const top = el('div', 'asmrow');
+  const prev = el('button', 'asmbtn', '‹'), next = el('button', 'asmbtn', '›'), off = el('button', 'asmbtn', '✕');
+  prev.disabled = P.asmStep <= 1; next.disabled = P.asmStep >= n; off.title = 'Выйти из режима сборки';
+  prev.onclick = () => { P.asmStep--; render(false); }; next.onclick = () => { P.asmStep++; render(false); }; off.onclick = () => { P.asmStep = 0; render(false); };
+  top.append(prev, el('b', '', `Шаг ${P.asmStep} из ${n}: ${s.title}`), next, off);
+  asmBox.append(top, el('div', 'asmtext', s.text.join(' ')));
 }
 function drawAll() { drawSections(); drawGlobal(); }
 
@@ -480,6 +607,8 @@ const EXPORTS = {
   prod: () => openProd(''),
   kp: () => openProd('#kp'),
   labels: () => openProd('#labels'),
+  asm: () => openProd('#asm'),
+  buy: () => openProd('#buy'),
   csv: () => download(toCSV(spec, `${typeLabel(P.type)} ${Math.round(spec.meta.W)} × ${P.height} × ${P.depth} мм`), stamp() + '.csv', 'text/csv;charset=utf-8'),
   dxf: () => download(toDXF(spec), stamp() + '.dxf', 'application/dxf'),
   obj: () => stage._runExport('obj'),
@@ -544,7 +673,7 @@ document.getElementById('xmenu').onclick = e => toggleMenu(xm, e);
 function openProject(id, skipSave) {
   if (!skipSave) { saveThumbNow(); save(); }
   cur = id; if (!placeholder) saveProjects(db, cur);
-  P = normalize(db[id].P); hist.length = 0; redoSt.length = 0; editing = null; sel = 0; kinKey = ''; fixNote = null;
+  P = normalize(db[id].P); P.asmStep = 0; hist.length = 0; redoSt.length = 0; editing = null; sel = 0; kinKey = ''; fixNote = null;
   if (projDlg.open) projDlg.close();
   drawAll(); render(true); syncUndo();
 }
@@ -667,12 +796,14 @@ function drawNewProject() {
 }
 
 // ── справочник и цены
+// варианты моделей (hwparams.js / fittings.js variantOf): по ним проект выбирает модель; свободный текст приводил к тихим промахам
+const VARIANT_OPTS = [['', '— без варианта'], ...['soft', 'plain', 'wide', 'half-soft', 'half-plain', 'half-wide', 'flap', 'ball', 'ballSoft', 'hidden', 'roller', 'push', 'bar', 'knob', 'profile', 'glass', 'top', 'bottom', 'v', 'h'].map(v => [v, v])];
 function openCatalog() {
   let c = JSON.parse(JSON.stringify(cat));
   const body = el('div', 'dbody catbox');
   const cell = (o, k, type, opts) => {
     let i;
-    if (type === 'select') { i = el('select'); opts.forEach(v => i.append(new Option(v, v, false, o[k] === v))); i.onchange = () => (o[k] = i.value); return i; }
+    if (type === 'select') { i = el('select'); if (!opts.some(v => (Array.isArray(v) ? v[0] : v) === o[k])) opts = [...opts, o[k]]; /* значение из старого справочника не теряем */ opts.forEach(v => { const [val, lab] = Array.isArray(v) ? v : [v, v]; i.append(new Option(lab, val, false, o[k] === val)); }); i.onchange = () => (o[k] = i.value); return i; }
     i = Object.assign(el('input'), { type, value: o[k] ?? '' });
     if (type === 'checkbox') { i.checked = !!o[k]; i.onchange = () => (o[k] = i.checked); } else i.oninput = () => (o[k] = type === 'number' ? +i.value || 0 : i.value);
     if (type === 'number') i.step = 'any';
@@ -689,6 +820,30 @@ function openCatalog() {
     const add = el('button', 'mini', '+ Добавить'); add.onclick = () => { list.push({ ...blank }); draw(); }; d.append(add);
     return d;
   };
+  // параметры присадки выбранных моделей: пустое поле = значение по умолчанию (hwparams.js)
+  const paramsBlock = () => {
+    const d = el('details'); d.append(el('summary', '', 'Присадка моделей'), el('div', 'hint2', 'Отступы, шаг и длины, по которым считается присадка. Сверьте с паспортом модели. Пустое поле — значение по умолчанию (серым). Для направляющих «вариант» модели должен быть ball, ballSoft, roller, hidden или push.'));
+    const body2 = el('div');
+    const draw2 = () => {
+      body2.innerHTML = '';
+      for (const o of c.fittings) {
+        const defs = HW_PARAM_DEFS[o.kind]; if (!defs) continue;
+        const base = o.kind === 'hinge' ? HW_DEFAULTS.hinge : o.kind === 'slide' ? HW_DEFAULTS.slide[o.variant] || HW_DEFAULTS.slide.ball : o.kind === 'shelfPin' ? HW_DEFAULTS.pin : HW_DEFAULTS.kupe;
+        const row = el('details'); row.append(el('summary', '', `${KIND_LABELS[o.kind]}: ${o.name || o.id}${o.variant ? ' · ' + o.variant : ''}`));
+        const tb = el('div', 'cgrid'); tb.style.gridTemplateColumns = '1fr 130px';
+        for (const [k, label, hint, type] of defs) {
+          const i = Object.assign(el('input'), { type: type === 'list' ? 'text' : 'number', placeholder: String(Array.isArray(base[k]) ? base[k].join(',') : base[k]), value: (o.params && o.params[k]) ?? '' });
+          if (type === 'num') i.step = 'any';
+          i.oninput = () => { o.params = o.params || {}; if (i.value === '') delete o.params[k]; else o.params[k] = type === 'list' ? i.value : +i.value; };
+          const l = el('span', '', label); if (hint) l.title = hint;
+          tb.append(l, i);
+        }
+        row.append(tb); body2.append(row);
+      }
+    };
+    d.ontoggle = () => { if (d.open) draw2(); };
+    d.append(body2); return d;
+  };
   const fields = (title, hint, defs) => {
     const d = el('details'); d.open = true; d.append(el('summary', '', title)); if (hint) d.append(el('div', 'hint2', hint));
     const tb = el('div', 'cgrid'); tb.style.gridTemplateColumns = '1fr 110px';
@@ -702,6 +857,9 @@ function openCatalog() {
       grid('Листы', 'Размер и цена листа для каждого материала и толщины. Тип: начало названия материала в спецификации.', c.sheets, [['mat', 'Материал', 'select', '90px', ['ЛДСП', 'МДФ', 'ХДФ']], ['T', 'Толщина', 'number', '1fr'], ['L', 'Длина', 'number', '1fr'], ['W', 'Ширина', 'number', '1fr'], ['price', 'Цена за лист', 'number', '1fr']], { mat: 'ЛДСП', T: 18, L: 2800, W: 2070, price: 0 }),
       fields('Кромка ПВХ, цена за пог. м', '', Object.keys(c.edge).map(k => [`${k.replace('.', ',')} мм`, c.edge, k])),
       grid('Фурнитура', 'Цена ищется по началу названия позиции в спецификации (например, «Петля» — все петли). Без цены позиция не входит в смету.', c.hardware, [['match', 'Название начинается с', 'text'], ['price', 'Цена за шт.', 'number', '90px'], ['art', 'Артикул', 'text', '110px']], { match: '', price: 0, art: '' }),
+      grid('Модели фурнитуры', 'Что покупать: категория, вариант (например, soft/plain у петель), бренд, название, артикул, цена за упаковку (штанги и профили — за хлыст), штук в упаковке, длина хлыста. В проекте выбирается модель на категорию; артикулы заполните своими.', c.fittings, [['kind', 'Категория', 'select', '120px', Object.entries(KIND_LABELS)], ['variant', 'Вариант', 'select', '110px', VARIANT_OPTS], ['brand', 'Бренд', 'text', '80px'], ['name', 'Название', 'text', '1.4fr'], ['art', 'Артикул', 'text', '90px'], ['price', 'Цена', 'number', '70px'], ['pack', 'В уп.', 'number', '50px'], ['stockLen', 'Хлыст, мм', 'number', '70px'], ['url', 'Ссылка', 'text', '1fr']], { id: '', kind: 'screw', variant: '', brand: '', name: '', art: '', price: 0, pack: 1, stockLen: 0, url: '', params: {} }),
+      paramsBlock(),
+      fields('Фрезеровка фасадов и кромка стекла', 'Рамка рамочных фасадов и фасадов под стекло, четверть под стекло, фаска и углы стекла. Идут в чертёж детали, примечания и DXF.', HW_PARAM_DEFS.mill.map(([k, l]) => [l, c.milling, k])),
       fields('Работы и наценка', '', [['Распил, за метр реза', c.works, 'cut'], ['Кромкование, за пог. м', c.works, 'edge'], ['Присадка, за отверстие', c.works, 'hole'], ['Сборка, % от материалов и фурнитуры', c.works, 'assembly'], ['Стекло, за м²', c.special, 'glass'], ['Зеркало, за м²', c.special, 'mirror'], ['Наценка, %', c, 'markup']]),
       fields('Раскрой', 'Пропил — ширина реза пилы; обпил — полоса, срезаемая по краю листа; остаток считается деловым от указанных размеров.', [['Пропил, мм', c.cut, 'kerf'], ['Обпил по краю, мм', c.cut, 'trim'], ['Деловой остаток: длиннее, мм', c.cut.minOffcut, 0], ['Деловой остаток: шире, мм', c.cut.minOffcut, 1]]),
     );
@@ -709,10 +867,10 @@ function openCatalog() {
   draw();
   const bx = el('button', '', 'Экспорт .json'); bx.onclick = () => download(JSON.stringify(c, null, 2), 'catalog.json', 'application/json');
   const bi = el('button', '', 'Импорт .json'), fi = Object.assign(el('input'), { type: 'file', accept: '.json' });
-  fi.onchange = async () => { try { const o = JSON.parse(await fi.files[0].text()); if (!Array.isArray(o.sheets) || !Array.isArray(o.decors)) throw 0; c = Object.assign(JSON.parse(JSON.stringify(DEFAULT_CATALOG)), o); draw(); } catch { info('Не удалось', 'Файл не похож на справочник.'); } };
+  fi.onchange = async () => { try { const o = JSON.parse(await fi.files[0].text()); if (!Array.isArray(o.sheets) || !Array.isArray(o.decors)) throw 0; c = sanitizeCatalog(o); draw(); } catch { info('Не удалось', 'Файл не похож на справочник.'); } };
   bi.onclick = () => fi.click();
   const br = el('button', '', 'Сбросить'); br.title = 'Вернуть справочник по умолчанию'; br.onclick = () => { c = JSON.parse(JSON.stringify(DEFAULT_CATALOG)); draw(); };
-  modal('Справочник и цены', body, { ok: 'Сохранить', wide: true, extra: [bx, bi, br] }).then(ok => { if (ok) { cat = c; saveCatalog(cat); drawGlobal(); } });
+  modal('Справочник и цены', body, { ok: 'Сохранить', wide: true, extra: [bx, bi, br] }).then(ok => { if (ok) { const ids = new Set(); c.fittings.forEach((f, i) => { let id = f.id || `${f.kind}-${f.variant || 'm'}-${i}`; while (ids.has(id)) id += '_'; f.id = id; ids.add(id); }); cat = c; saveCatalog(cat); kinKey = ''; drawGlobal(); render(false); } });
 }
 
 // ── мобильная панель: три состояния и вкладки

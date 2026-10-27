@@ -2,7 +2,13 @@
 // Panel planes: 'yz' (u=y, v=z from back), 'xz' (u=x from left, v=z from back), 'xy' (u=x from left, v=y from bottom).
 // Faces: yz A=-x B=+x · xz A=top B=bottom · xy A=front B=back. Edges: w1 u=0, w2 u=L, d1 v=0, d2 v=W.
 import { addFronts } from './model-fronts.js';
+import { defaultHw } from './hwparams.js';
 
+/** Порядок этапов сборки; asm у детали и у extra — ключ этапа. */
+export const STAGES = ['base', 'carcass', 'dividers', 'fixed', 'back', 'top', 'backOverlay', 'cornice', 'shelves', 'rods', 'drawerBox', 'drawers', 'doors', 'flaps', 'handles', 'kupe', 'final'];
+const HW_KINDS = [[/^Конфирмат/, 'confirmat'], [/^Эксцентрик/, 'minifix'], [/^Шкант/, 'dowel'], [/^Полкодержатель/, 'shelfPin'], [/^Штангодержатель/, 'rodHolder'], [/^Штанга/, 'rod'], [/^Петля/, 'hinge'], [/^Направляющие/, 'slide'], [/^Ручка/, 'handle'], [/^Уголок мебельный/, 'bracket'], [/^Опора/, 'leg'], [/^(Саморез|Винт)/, 'screw'], [/^Клей/, 'glue'], [/^Газлифт/, 'gasLift'], [/^Стабилизатор/, 'stay'], [/^Рельс купе/, 'kupeRail'], [/^Профиль купе/, 'kupeProfile'], [/^Ролики/, 'kupeRoller'], [/^Толкатель/, 'pushLatch'], [/^Анкер/, 'wallFix'], [/^Дюбель/, 'wallDowel']];
+/** Категория фурнитуры по названию позиции. */
+export const hwKind = name => (HW_KINDS.find(([re]) => re.test(name)) || [0, 'other'])[1];
 export const ITEM_H = { shelf: null, fixed: null, glass: 6, rod: 40, drawer: null, idrawer: null };
 /** Drawer with a visible front, or a built-in one hidden behind the section's door. */
 export const isDrawer = t => t === 'drawer' || t === 'idrawer';
@@ -24,7 +30,9 @@ export function presetItems(kind, ih, P) {
   return it;
 }
 
-export function buildSpec(P) {
+/** opts.hw — параметры фурнитуры выбранных моделей (resolveHw); без них берутся значения по умолчанию. */
+export function buildSpec(P, opts = {}) {
+  const hw_ = opts.hw || defaultHw(P), pin = hw_.pin;
   const S = P.sections, n = S.length, t = P.thickness, H = P.height, D = P.depth;
   const W = S.reduce((a, s) => a + s.width, 0) + (n + 1) * t;
   const b = P.base === 'none' ? 0 : P.plinth;
@@ -36,15 +44,30 @@ export function buildSpec(P) {
   const zF = D / 2 - (sliding ? 90 : 0);
   const yB = b + t, yT = H - t, ih = yT - yB;
   const body = `ЛДСП ${P.bodyName}`;
-  const parts = [], extras = [], hw = new Map(), warnings = [];
+  const parts = [], extras = [], hw = new Map(), hwx = new Map(), warnings = [];
+  let stage = 'carcass';
   const r1 = v => Math.round(v * 10) / 10;
-  const addHw = (k, q = 1) => hw.set(k, (hw.get(k) || 0) + q);
+  const addHw = (k, q = 1) => {
+    hw.set(k, (hw.get(k) || 0) + q);
+    const key = `${k}|${stage}`, e = hwx.get(key) || hwx.set(key, { kind: hwKind(k), name: k, qty: 0, stage }).get(key);
+    e.qty += q;
+  };
+  // крепёж узла относится к этапу детали, которая ставится позже: перегородку к крышке притягивают только после установки крышки
+  const at = (st, fn) => { const prev = stage; stage = st; try { return fn(); } finally { stage = prev; } };
+  const extra = o => { extras.push({ asm: stage, ...o }); return o; };
+  // кромка и углы стекла из справочника (по умолчанию просто шлифованная кромка и прямые углы)
+  const glassEdge = () => (hw_.mill.glassChamfer ? `, фаска ${hw_.mill.glassChamfer}×45°` : '') + (hw_.mill.glassCornerR ? `, углы R${hw_.mill.glassCornerR}` : '');
   const part = o => {
-    const p = { kind: 'panel', mat: 'body', label: body, T: t, holes: [], grooves: [], notes: [], sec: 0, ...o };
+    const p = { kind: 'panel', mat: 'body', label: body, T: t, holes: [], grooves: [], notes: [], sec: 0, asm: stage, ...o };
     p.edges = { d1: 0, d2: 0, w1: 0, w2: 0, ...(o.edges || {}) };
     parts.push(p); return p;
   };
-  const hole = (p, f, u, v, d, h, note) => p.holes.push({ f, u: r1(u), v: r1(v), d, h, note });
+  // в общей перегородке мелкие отверстия (полкодержатели, штангодержатели, планки) с двух сторон могут совпасть: 12+12 мм прошили бы плиту, поэтому там не глубже 8 мм
+  const effDepth = (p, f, d, h) => ((f === 'A' || f === 'B') && /перегородка/i.test(p.name) && d <= 5 && typeof h === 'number' && h > 8 ? Math.min(8, Math.floor((p.T - 2) / 2)) : h);
+  const hole = (p, f, u, v, d, h, note) => p.holes.push({ f, u: r1(u), v: r1(v), d, h: effDepth(p, f, d, h), note });
+  // отверстие с пласти f в точке (u, v) прошьёт плиту насквозь, если с обратной пласти в том же месте уже есть глухое и глубины в сумме почти равны толщине
+  const pierces = (p, f, u, v, d, h) => { const hh = effDepth(p, f, d, h); return typeof hh === 'number' && p.holes.some(o => (o.f === 'A' || o.f === 'B') && o.f !== f && typeof o.h === 'number' && Math.hypot(o.u - u, o.v - v) < (o.d + d) / 2 + 1 && o.h + hh >= p.T - 1); };
+  let later = []; // сверловка полкодержателей и штангодержателей идёт после стыков секции: они обходят уже просверленные гнёзда
   const edgeHole = (p, e, s, d, h, note) => hole(p, e, e === 'w1' ? 0 : e === 'w2' ? p.L : s, e === 'd1' ? 0 : e === 'd2' ? p.W : s, d, h, note);
   const cpos = len => (len > 450 ? [50, len / 2, len - 50] : [50, len - 50]);
   const opp = f => (f === 'A' ? 'B' : 'A');
@@ -53,7 +76,7 @@ export function buildSpec(P) {
   const conf = (fp, ff, fu, fv, ep, e, es, cam = 'A') => {
     const kind = P.joint || 'confirmat', len = e === 'w1' || e === 'w2' ? ep.W : ep.L;
     const es2 = Math.max(20, Math.min(len - 20, es + (es <= len / 2 ? 32 : -32)));
-    const dowel = s => { hole(fp, opp(ff), fu, fv + s - es, 8, 15, 'шкант'); edgeHole(ep, e, s, 8, 20, 'шкант'); addHw('Шкант 8×35'); };
+    const dowel = s => { const df = Math.min(15, fp.T - 3); hole(fp, opp(ff), fu, fv + s - es, 8, df, 'шкант'); edgeHole(ep, e, s, 8, 35 - df, 'шкант'); addHw('Шкант 8×35'); }; // 35 мм = в пласти + в торце; в 16 мм плите остаётся 3 мм
     if (kind === 'minifix') {
       hole(fp, opp(ff), fu, fv, 5, 12, 'минификс: штифт');
       edgeHole(ep, e, es, 8, 34, 'минификс: торец');
@@ -66,6 +89,7 @@ export function buildSpec(P) {
   };
 
   // ── carcass
+  stage = 'carcass';
   const sideH = H - b - (ovTop ? t : 0);
   const sideE = { d2: eF, w2: ovTop ? 0 : eH, w1: P.base === 'legs' ? eH : 0 };
   const sideL = part({ name: 'Боковина левая', plane: 'yz', L: sideH, W: Dc, c: [-W / 2 + t / 2, b + sideH / 2, zC0 + Dc / 2], edges: sideE });
@@ -73,6 +97,7 @@ export function buildSpec(P) {
   const bottom = part({ name: 'Дно', plane: 'xz', L: W - 2 * t, W: Dc, c: [0, b + t / 2, zC0 + Dc / 2], edges: { d2: eF } });
   for (const v of cpos(Dc)) { conf(sideL, 'A', t / 2, v, bottom, 'w1', v, 'B'); conf(sideR, 'B', t / 2, v, bottom, 'w2', v, 'B'); }
   let top, topX0;
+  stage = 'top';
   if (ovTop) {
     top = part({ name: 'Крышка', plane: 'xz', L: W + 2 * ov, W: Dc + ov, c: [0, H - t / 2, zC0 + (Dc + ov) / 2], edges: { d2: eF, w1: eF, w2: eF, d1: ov ? eH : 0 } });
     topX0 = -W / 2 - ov;
@@ -82,26 +107,31 @@ export function buildSpec(P) {
     topX0 = -W / 2 + t;
     for (const v of cpos(Dc)) { conf(sideL, 'A', sideH - t / 2, v, top, 'w1', v, 'A'); conf(sideR, 'B', sideH - t / 2, v, top, 'w2', v, 'A'); }
   }
+  stage = 'back';
   if (P.backType === 'groove') {
     for (const [p, f] of [[sideL, 'B'], [sideR, 'A'], [bottom, 'A'], [top, 'B']]) p.grooves.push({ f, axis: 'u', at: 16, w: 4.5, depth: 8, note: 'паз под ХДФ' });
     part({ name: 'Задняя стенка', mat: 'back', label: 'ХДФ', T: 4, plane: 'xy', L: W - 2 * t + 14, W: ih + 14, c: [0, (yB + yT) / 2, -D / 2 + 18], notes: ['устанавливается в паз 4,5×8 мм'] });
   } else if (P.backType === 'overlay') {
+    stage = 'backOverlay';
     const bk = part({ name: 'Задняя стенка', mat: 'back', label: 'ХДФ', T: 4, plane: 'xy', L: W - 4, W: H - b - 4, c: [0, b + (H - b) / 2, -D / 2 + 2], notes: ['крепится саморезами 3,5×16 с шагом 150 мм'] });
     addHw('Саморез 3,5×16 (для ХДФ)', Math.ceil((2 * (bk.L + bk.W)) / 150) + (n - 1) * Math.ceil(bk.W / 300));
   }
+  stage = 'base';
   if (P.base === 'plinth') {
     // Plinth frame under the whole carcass: the sides, dividers and bottom stand on it, not in the air.
     const zP = D / 2 - 50, pd = zP - zC0, fn = ['крепится мебельными уголками к дну'];
     part({ name: 'Цоколь', plane: 'xy', L: W - 2 * t, W: b, c: [0, b / 2, zP - t / 2], edges: { d1: eH }, notes: fn });
     part({ name: 'Цоколь задний', plane: 'xy', L: W - 2 * t, W: b, c: [0, b / 2, zC0 + t / 2], notes: fn });
     for (const sx of [-1, 1]) part({ name: 'Цоколь боковой', plane: 'yz', L: b, W: pd, c: [sx * (W / 2 - t / 2), b / 2, zC0 + pd / 2], notes: ['опора боковины; крепится уголками к дну'] });
-    addHw('Уголок мебельный', 8 + 2 * (n + 1));
+    addHw('Уголок мебельный', 8 + 2 * (n + 1)); addHw('Саморез 4×16 (мебельные уголки)', 2 * (8 + 2 * (n + 1)));
   }
   if (P.base === 'legs') {
     const lx = W > 1200 ? [-1, 0, 1] : [-1, 1];
-    for (const sx of lx) for (const sz of [-1, 1]) extras.push({ kind: 'cyl', mat: 'metal', name: 'Ножка', r: 16, len: b, axis: 'y', c: [sx * (W / 2 - 50), b / 2, sz * (D / 2 - 50)] });
+    for (const sx of lx) for (const sz of [-1, 1]) extra({ kind: 'cyl', mat: 'metal', name: 'Ножка', r: 16, len: b, axis: 'y', c: [sx * (W / 2 - 50), b / 2, sz * (D / 2 - 50)] });
     addHw(`Опора мебельная H=${b} мм`, lx.length * 2);
   }
+  stage = 'cornice';
+  if (P.cornice) addHw('Саморез 4×30 (карниз)', Math.ceil((2 * (W + 30 + Dc + 20)) / 300));
   if (P.cornice) part({ name: 'Карниз', plane: 'xz', L: W + 30, W: Dc + 20, c: [0, H + t / 2, zC0 + (Dc + 20) / 2], edges: { d2: eF, w1: eF, w2: eF }, notes: ['крепится к крышке саморезами 4×30 снизу'] });
 
   // ── sections
@@ -113,13 +143,14 @@ export function buildSpec(P) {
   S.forEach((s, i) => {
     if (i > 0) {
       const xd = x0 - t / 2;
+      stage = 'dividers';
       const dv = part({ name: 'Перегородка', plane: 'yz', L: ih, W: divD, c: [xd, (yB + yT) / 2, divZ0 + divD / 2], edges: { d2: eF }, sec: i });
       for (const v of cpos(divD)) {
         conf(bottom, 'B', xd - (-W / 2 + t), divZ0 + v - zC0, dv, 'w1', v, 'A');
-        conf(top, 'A', xd - topX0, divZ0 + v - zC0, dv, 'w2', v, 'A');
+        at('top', () => conf(top, 'A', xd - topX0, divZ0 + v - zC0, dv, 'w2', v, 'A'));
       }
       bounds.push({ p: dv, y0: yB, z0: divZ0, div: true });
-      if (P.base === 'plinth') part({ name: 'Цоколь средний', plane: 'yz', L: b, W: D / 2 - 50 - zC0, c: [xd, b / 2, zC0 + (D / 2 - 50 - zC0) / 2], sec: i, notes: ['опора перегородки; крепится уголками к дну'] });
+      if (P.base === 'plinth') { stage = 'base'; part({ name: 'Цоколь средний', plane: 'yz', L: b, W: D / 2 - 50 - zC0 - 2 * t, c: [xd, b / 2, zC0 + t + (D / 2 - 50 - zC0 - 2 * t) / 2], sec: i, notes: ['опора перегородки; крепится уголками к дну'] }); }
     }
     x0 += s.width + t;
   });
@@ -134,34 +165,57 @@ export function buildSpec(P) {
   // c = { iw, cx, L, R, xL, xR, sec, onBounds }: ширина, центр, левая и правая опоры, их внутренние грани. Возвращает деталь для полки.
   const emit = (it, c) => {
     const { iw, cx, L, R, xL, xR, sec, onBounds } = c, ya = yB + it.y;
+    stage = it.type === 'fixed' ? 'fixed' : it.type === 'rod' ? 'rods' : 'shelves';
     if (it.type === 'shelf' || it.type === 'glass') {
       const gl = it.type === 'glass';
       const p = part(gl
-        ? { name: 'Полка стеклянная', mat: 'glass', label: 'Стекло закалённое', T: 6, plane: 'xz', L: iw - 4, W: sd, c: [cx, ya + 3, shelfBack + sd / 2], sec, notes: ['кромки шлифованные'] }
+        ? { name: 'Полка стеклянная', mat: 'glass', label: 'Стекло закалённое', T: 6, plane: 'xz', L: iw - 4, W: sd, c: [cx, ya + 3, shelfBack + sd / 2], sec, notes: ['кромки шлифованные' + glassEdge()] }
         : { name: 'Полка съёмная', plane: 'xz', L: iw - 2, W: sd, c: [cx, ya + t / 2, shelfBack + sd / 2], edges: { d2: eF }, sec });
-      for (const dy of [-32, 0, 32]) for (const z of [shelfFront - 37, shelfBack + 37]) onBounds(ya - 5 + dy, z, 5, 12, 'полкодержатель');
-      addHw(gl ? 'Полкодержатель для стекла' : 'Полкодержатель', 4);
-      for (const z of [shelfFront - 37, shelfBack + 37]) for (const sx of [-1, 1]) extras.push({ kind: 'box', mat: 'metal', nc: true, name: 'Полкодержатель', s: [8, 6, 8], c: [sx < 0 ? xL + 4 : xR - 4, ya - 3, z], sec });
+      // три ряда отверстий с шагом 32; ряд, не поместившийся на опоре (полка у края), не сверлится
+      const yLo = Math.max(L.y0, R.y0), yHi = Math.min(L.y0 + L.p.L, R.y0 + R.p.L);
+      later.push(() => at('shelves', () => {
+        const rows = [-pin.pitch, 0, pin.pitch].map(dy => ({ dy, y: ya - 5 + dy })).filter(r => r.y - pin.d / 2 >= yLo - 0.01 && r.y + pin.d / 2 <= yHi + 0.01);
+        const free = (y, z) => !pierces(L.p, 'B', y - L.y0, z - L.z0, pin.d, pin.depth) && !pierces(R.p, 'A', y - R.y0, z - R.z0, pin.d, pin.depth);
+        const mid = rows.find(r => r.dy === 0);
+        // средний ряд держит полку: если против него гнездо эксцентрика с другой стороны, точка сдвигается вдоль глубины (спереди и сзади независимо)
+        const pickZ = z0 => { if (!mid) return z0; for (const t of [0, 10, -10, 20, -20]) { const z = z0 + t; if (z >= shelfBack + 12 && z <= shelfFront - 12 && free(mid.y, z)) return z; } return z0; };
+        const zs = [pickZ(shelfFront - pin.offset), pickZ(shelfBack + pin.offset)];
+        for (const r of rows) for (const z of zs) if (r.dy === 0 || free(r.y, z)) onBounds(r.y, z, pin.d, pin.depth, 'полкодержатель'); // лишний ряд против гнезда пропускается
+        addHw(gl ? 'Полкодержатель для стекла' : 'Полкодержатель', 4);
+        for (const z of zs) for (const sx of [-1, 1]) extra({ kind: 'box', mat: 'metal', nc: true, name: 'Полкодержатель', s: [8, 6, 8], c: [sx < 0 ? xL + 4 : xR - 4, ya - 3, z], sec });
+      }));
       return p;
     }
     if (it.type === 'fixed') {
       const p = part({ name: it.name || (it.auto ? 'Полка антресоли' : 'Полка стационарная'), plane: 'xz', L: iw, W: sd, c: [cx, ya + t / 2, shelfBack + sd / 2], edges: { d2: eF }, sec });
       // у общей перегородки соседние полки на одной высоте дали бы совпадающие отверстия с двух сторон: такую точку сдвигаем
-      const clash = (pn, u, v) => pn.holes.some(h => (h.f === 'A' || h.f === 'B') && /конфирмат|минификс|шкант/.test(h.note || '') && Math.abs(h.u - u) < 12 && Math.abs(h.v - v) < 12);
+      const clash = (pn, u, v) => pn.holes.some(h => (h.f === 'A' || h.f === 'B') && /конфирмат|минификс|шкант|полкодержатель|штангодержатель/.test(h.note || '') && Math.abs(h.u - u) < 12 && Math.abs(h.v - v) < 12);
       for (let v of cpos(sd)) {
         const uL = ya + t / 2 - L.y0, uR = ya + t / 2 - R.y0;
-        if (clash(L.p, uL, shelfBack + v - L.z0) || clash(R.p, uR, shelfBack + v - R.z0)) v += v + 40 <= sd - 30 ? 40 : -40;
+        // у шканта и минификса узел — две точки (вторая в 32 мм): проверяем обе и пробуем несколько сдвигов
+        const pts = w => (P.joint === 'dowel' || P.joint === 'minifix' ? [w, Math.max(20, Math.min(sd - 20, w + (w <= sd / 2 ? 32 : -32)))] : [w]);
+        const bad = w => pts(w).some(x => clash(L.p, uL, shelfBack + x - L.z0) || clash(R.p, uR, shelfBack + x - R.z0));
+        if (bad(v)) {
+          const dir = v + 40 <= sd - 30 ? 1 : -1;
+          const cand = [dir * 40, -dir * 40];
+          for (let d = 14; d <= sd; d += 2) cand.push(dir * d, -dir * d);
+          v = cand.map(d => v + d).find(w => w >= 30 && w <= sd - 30 && !bad(w)) ?? v + dir * 40;
+        }
         conf(L.p, 'A', uL, shelfBack + v - L.z0, p, 'w1', v, 'B');
         conf(R.p, 'B', uR, shelfBack + v - R.z0, p, 'w2', v, 'B');
       }
       return p;
     }
     if (it.type === 'rod') {
-      const zc = shelfBack + sd / 2;
-      extras.push({ kind: 'cyl', mat: 'metal', name: 'Штанга', r: 12.5, len: iw - 2, axis: 'x', c: [cx, ya, zc], sec });
-      for (const sx of [-1, 1]) extras.push({ kind: 'cyl', mat: 'metal', nc: true, name: 'Штангодержатель', r: 20, len: 6, axis: 'x', c: [cx + sx * (iw / 2 - 3), ya, zc], sec });
-      for (const dz of [-15, 15]) onBounds(ya, zc + dz, 3, 10, 'штангодержатель');
-      addHw(`Штанга Ø25, L=${iw - 2} мм`); addHw('Штангодержатель', 2);
+      later.push(() => at('rods', () => {
+        let zc = shelfBack + sd / 2;
+        const free = z => [-15, 15].every(dz => !pierces(L.p, 'B', ya - L.y0, z + dz - L.z0, 3, 10) && !pierces(R.p, 'A', ya - R.y0, z + dz - R.z0, 3, 10));
+        if (!free(zc)) for (const t of [10, -10, 20, -20, 30, -30]) if (free(zc + t)) { zc += t; break; } // штанга сдвигается вдоль глубины, если держатель попал против гнезда
+        extra({ kind: 'cyl', mat: 'metal', name: 'Штанга', r: 12.5, len: iw - 2, axis: 'x', c: [cx, ya, zc], sec });
+        for (const sx of [-1, 1]) extra({ kind: 'cyl', mat: 'metal', nc: true, name: 'Штангодержатель', r: 20, len: 6, axis: 'x', c: [cx + sx * (iw / 2 - 3), ya, zc], sec });
+        for (const dz of [-15, 15]) onBounds(ya, zc + dz, 3, 10, 'штангодержатель');
+        addHw(`Штанга Ø25, L=${iw - 2} мм`); addHw('Штангодержатель', 2); addHw('Саморез 4×16 (штангодержатель)', 4);
+      }));
     }
     return null;
   };
@@ -171,10 +225,13 @@ export function buildSpec(P) {
     const L = bounds[i], R = bounds[i + 1], onBounds = mkOnBounds(L, R);
     const xL = L.p.c[0] + L.p.T / 2, xR = R.p.c[0] - R.p.T / 2, blocks = [];
     const col = { iw, cx, L, R, xL, xR, sec, onBounds };
+    later = [];
     const items = [...(s.items || [])];
     if (s.split > 0 && !sliding) items.push({ type: 'fixed', y: ih - s.split - t / 2, auto: true });
     // зона деления по высоте: полка-граница и полуперегородка с двумя колонками
-    const z = s.zone, zh = z ? Math.max(0, Math.min(z.h, ih - 2 * t)) : 0, zy0 = z && z.pos === 'top' ? ih - zh : 0;
+    let z = s.zone, zh = z ? Math.max(0, Math.min(z.h, ih - 2 * t)) : 0;
+    if (z && zh < 60) { warnings.push(`Секция ${sec}: зона деления не помещается по высоте`); z = null; zh = 0; }
+    const zy0 = z && z.pos === 'top' ? ih - zh : 0;
     if (z) items.push({ type: 'fixed', y: z.pos === 'top' ? zy0 - t : zh, name: 'Полка зоны', zone: true });
     items.sort((a, b2) => a.y - b2.y);
     let prevTop = -1, zoneShelf = null;
@@ -192,12 +249,13 @@ export function buildSpec(P) {
     }
     if (z) {
       const sp = Math.max(100, Math.min(z.split, iw - t - 100)), xh = xL + sp + t / 2;
+      stage = 'fixed';
       const hd = part({ name: 'Полуперегородка', plane: 'yz', L: zh, W: sd, c: [xh, yB + zy0 + zh / 2, shelfBack + sd / 2], edges: { d2: eF }, sec, notes: ['делит зону секции на две колонки'] });
       const hb = { p: hd, y0: yB + zy0, z0: shelfBack, div: true };
       for (const v of cpos(sd)) {
         const zz = shelfBack + v, su = xh - (cx - iw / 2);
         if (z.pos === 'top') {
-          conf(top, 'A', xh - topX0, zz - zC0, hd, 'w2', v, 'A');
+          at('top', () => conf(top, 'A', xh - topX0, zz - zC0, hd, 'w2', v, 'A'));
           if (zoneShelf) conf(zoneShelf, 'B', su, v, hd, 'w1', v, 'A');
         } else {
           conf(bottom, 'B', xh - (-W / 2 + t), zz - zC0, hd, 'w1', v, 'A');
@@ -220,15 +278,40 @@ export function buildSpec(P) {
         }
       }
     }
+    later.forEach(f => f());
     secMeta.push({ x: cx, w: iw, sec: i });
     s._ctx = { iw, cx, L, R, onBounds, drawers, blocks, faceL: xL, faceR: xR, eL: i === 0 ? -W / 2 : L.p.c[0], eR: i === n - 1 ? W / 2 : R.p.c[0] };
     x0 += iw + t;
   });
 
-  const ctx = { P, S, W, H, D, t, b, ovTop, sliding, eF, eH, zF, yB, yT, ih, shelfBack, sd, parts, extras, part, hole, addHw, warnings, body };
+  if (P.wallFix) {
+    stage = 'final';
+    addHw('Анкерный уголок для крепления к стене', 2); addHw('Саморез 4×16 (уголок к корпусу)', 2); addHw('Дюбель с шурупом 6×60 (в стену)', 2);
+  }
+  stage = 'doors';
+  const ctx = { hw: hw_, pierces, setStage: v => { stage = v; }, extra, P, S, W, H, D, t, b, ovTop, sliding, eF, eH, zF, yB, yT, ih, shelfBack, sd, parts, extras, part, hole, addHw, warnings, body };
   addFronts(ctx);
   S.forEach(s => delete s._ctx);
-  return { parts, extras, hw: [...hw.entries()], warnings, meta: { W, H: H + (P.cornice ? t : 0), D, yB, yT, ih, sections: secMeta } };
+  applyCutouts(P, parts, warnings);
+  const dowels = [...hw].filter(([k]) => /^Шкант/.test(k)).reduce((a, [, q]) => a + q, 0);
+  if (dowels) at('carcass', () => addHw('Клей ПВА столярный, 250 г', Math.ceil(dowels / 200)));
+  return { parts, extras, hwx: [...hwx.values()], hw: [...hw.entries()], warnings, meta: { W, H: H + (P.cornice ? t : 0), D, yB, yT, ih, sections: secMeta } };
+}
+
+/** Вырезы проекта (P.cutouts) ложатся на детали по имени; в детали — p.cutouts = [{ kind, u0, v0, u1, v1, r, corner? }] в её координатах. */
+function applyCutouts(P, parts, warnings) {
+  for (const c of P.cutouts || []) {
+    const targets = parts.filter(p => p.name === c.part && (!c.sec || p.sec === c.sec));
+    if (!targets.length) { warnings.push(`Вырез: деталь «${c.part}»${c.sec ? ` (секция ${c.sec})` : ''} не найдена`); continue; }
+    for (const p of targets) {
+      let u0, u1, v0, v1;
+      if (c.kind === 'notch') { [u0, u1] = c.corner[1] === '1' ? [0, c.w] : [p.L - c.w, p.L]; [v0, v1] = c.corner[3] === '1' ? [0, c.h] : [p.W - c.h, p.W]; }
+      else { u0 = c.u - c.w / 2; u1 = c.u + c.w / 2; v0 = c.v - c.h / 2; v1 = c.v + c.h / 2; }
+      const r1 = x => Math.round(x * 10) / 10;
+      if (c.kind === 'notch' ? c.w > p.L - 20 || c.h > p.W - 20 : u0 < 10 || v0 < 10 || u1 > p.L - 10 || v1 > p.W - 10) warnings.push(`Вырез на «${p.name}»${p.sec ? ` (секция ${p.sec})` : ''} не помещается в деталь ${Math.round(p.L)}×${Math.round(p.W)} мм (до края не меньше 10 мм)`);
+      (p.cutouts = p.cutouts || []).push({ kind: c.kind, u0: r1(u0), v0: r1(v0), u1: r1(u1), v1: r1(v1), r: c.r, ...(c.kind === 'notch' ? { corner: c.corner } : {}) });
+    }
+  }
 }
 
 export const itemName = t => ({ shelf: 'Полка', fixed: 'Полка стац.', glass: 'Полка стекло', rod: 'Штанга', drawer: 'Ящик', idrawer: 'Ящик встроенный' }[t] || t);

@@ -4,7 +4,7 @@ import { dims } from './kinematics.js';
 const FILL = { body: '#efe9dd', back: '#f6f3ec', glass: '#cfe0e4', mirror: '#dfe6ea', front: '#e4d3b8' };
 const INK = '#1f1e1b', DIM = '#8a8478';
 const f1 = v => String(Math.round(v * 10) / 10).replace('.', ',');
-const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
 function kit(BW, BH) {
   const out = [`<svg viewBox="0 0 ${BW} ${BH}" style="width:100%;max-width:${BW}px;background:#fff" font-family="Helvetica,Arial,sans-serif" font-size="11">`];

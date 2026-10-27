@@ -3,7 +3,45 @@ import { dims, groupPose, solve } from './kinematics.js';
 export { dims };
 const HOLE_COL = { 35: 0xd4672a, 15: 0x8e44ad, 8: 0x2f8f5b, 7: 0x2b6cb0, 5: 0x2f2f2f, 3: 0x7a7a7a, 4: 0x7a7a7a };
 
-export function build3D(THREE, spec, P) {
+/**
+ * opts.asm = { shown: Set этапов, current: этап шага } — режим пошаговой сборки: рисуются только собранные этапы, текущий подсвечен, двери закрыты.
+ */
+/** Деталь с вырезами: контур с выемками и отверстиями-вырезами, выдавленный на толщину (мм → м). Радиус выемок в углу не показывается. */
+function cutGeometry(THREE, p, k) {
+  const { L, W, T } = p, cs = p.cutouts, notch = {};
+  for (const c of cs) if (c.kind === 'notch' && !notch[c.corner]) notch[c.corner] = { w: c.u1 - c.u0, h: c.v1 - c.v0 };
+  const n = notch, s = new THREE.Shape(), a = n.w1d1, b = n.w2d1, c2 = n.w2d2, d = n.w1d2;
+  s.moveTo(a ? a.w : 0, 0); s.lineTo(b ? L - b.w : L, 0);
+  if (b) { s.lineTo(L - b.w, b.h); s.lineTo(L, b.h); }
+  s.lineTo(L, c2 ? W - c2.h : W);
+  if (c2) { s.lineTo(L - c2.w, W - c2.h); s.lineTo(L - c2.w, W); }
+  s.lineTo(d ? d.w : 0, W);
+  if (d) { s.lineTo(d.w, W - d.h); s.lineTo(0, W - d.h); }
+  s.lineTo(0, a ? a.h : 0);
+  if (a) { s.lineTo(a.w, a.h); s.lineTo(a.w, 0); }
+  for (const c of cs) if (c.kind !== 'notch') {
+    const h = new THREE.Path(), r = Math.min(c.r || 0, (c.u1 - c.u0) / 2, (c.v1 - c.v0) / 2);
+    h.moveTo(c.u0 + r, c.v0); h.lineTo(c.u1 - r, c.v0);
+    if (r) h.absarc(c.u1 - r, c.v0 + r, r, -Math.PI / 2, 0, false);
+    h.lineTo(c.u1, c.v1 - r);
+    if (r) h.absarc(c.u1 - r, c.v1 - r, r, 0, Math.PI / 2, false);
+    h.lineTo(c.u0 + r, c.v1);
+    if (r) h.absarc(c.u0 + r, c.v1 - r, r, Math.PI / 2, Math.PI, false);
+    h.lineTo(c.u0, c.v0 + r);
+    if (r) h.absarc(c.u0 + r, c.v0 + r, r, Math.PI, 1.5 * Math.PI, false);
+    s.holes.push(h);
+  }
+  const g = new THREE.ExtrudeGeometry(s, { depth: T, bevelEnabled: false, curveSegments: 8 });
+  g.translate(-L / 2, -W / 2, -T / 2); g.scale(k, k, k);
+  const eu = p.plane === 'yz' ? [0, 1, 0] : [1, 0, 0], ev = p.plane === 'xy' ? [0, 1, 0] : [0, 0, 1];
+  const en = [eu[1] * ev[2] - eu[2] * ev[1], eu[2] * ev[0] - eu[0] * ev[2], eu[0] * ev[1] - eu[1] * ev[0]];
+  g.applyMatrix4(new THREE.Matrix4().makeBasis(new THREE.Vector3(...eu), new THREE.Vector3(...ev), new THREE.Vector3(...en)));
+  g.computeVertexNormals();
+  return g;
+}
+
+export function build3D(THREE, spec, P, opts = {}) {
+  const asm = opts.asm || null;
   const k = 1 / 1000;
   const M = {
     body: new THREE.MeshStandardMaterial({ name: 'korpus', color: P.bodyColor, roughness: 0.62 }),
@@ -18,8 +56,16 @@ export function build3D(THREE, spec, P) {
   const root = new THREE.Group(); root.name = 'mebel';
   const groups = {};
   const hidden = g => P.hideDoors && g && (g.type === 'hinge' || g.type === 'slidex');
+  const skipStage = st => asm && !asm.shown.has(st);
+  const hlMats = new Map();
+  // деталь текущего шага — тот же материал с оранжевой подсветкой
+  const hl = (st, m) => {
+    if (!asm || st !== asm.current) return m;
+    if (!hlMats.has(m)) { const c = m.clone(); c.emissive = new THREE.Color(0xd4672a); c.emissiveIntensity = 0.45; hlMats.set(m, c); }
+    return hlMats.get(m);
+  };
   // doors, flaps and drawers open together and stop where they touch each other or the carcass
-  const sol = solve(spec, P.open, { skip: hidden });
+  const sol = solve(spec, asm ? 0 : P.open, { skip: hidden });
 
   function parentFor(g) {
     if (!g) return { obj: root, off: [0, 0, 0] };
@@ -43,18 +89,19 @@ export function build3D(THREE, spec, P) {
   const boxGeo = (x, y, z) => new THREE.BoxGeometry(x * k, y * k, z * k);
 
   spec.parts.forEach((p, i) => {
-    if (hidden(p.group)) return;
+    if (hidden(p.group) || skipStage(p.asm)) return;
     const par = parentFor(p.group);
+    const mat = hl(p.asm, M[p.mat]);
     const [sx, sy, sz] = dims(p);
     const name = translit(p.name) + '_' + (i + 1);
     if (p.style === 'shaker' || p.style === 'glass') {
-      const r = 70, [cx, cy, cz] = p.c;
-      add(par, name + '_l', boxGeo(r, sy, sz), M[p.mat], [cx - sx / 2 + r / 2, cy, cz], p.sec);
-      add(par, name + '_r', boxGeo(r, sy, sz), M[p.mat], [cx + sx / 2 - r / 2, cy, cz], p.sec);
-      add(par, name + '_t', boxGeo(sx - 2 * r, r, sz), M[p.mat], [cx, cy + sy / 2 - r / 2, cz], p.sec);
-      add(par, name + '_b', boxGeo(sx - 2 * r, r, sz), M[p.mat], [cx, cy - sy / 2 + r / 2, cz], p.sec);
-      if (p.style === 'shaker') add(par, name + '_c', boxGeo(sx - 2 * r + 2, sy - 2 * r + 2, sz * 0.45), M[p.mat], [cx, cy, cz - sz * 0.2], p.sec);
-    } else add(par, name, boxGeo(sx, sy, sz), M[p.mat], p.c, p.sec);
+      const r = p.mill ? p.mill.frameW : 70, [cx, cy, cz] = p.c;
+      add(par, name + '_l', boxGeo(r, sy, sz), mat, [cx - sx / 2 + r / 2, cy, cz], p.sec);
+      add(par, name + '_r', boxGeo(r, sy, sz), mat, [cx + sx / 2 - r / 2, cy, cz], p.sec);
+      add(par, name + '_t', boxGeo(sx - 2 * r, r, sz), mat, [cx, cy + sy / 2 - r / 2, cz], p.sec);
+      add(par, name + '_b', boxGeo(sx - 2 * r, r, sz), mat, [cx, cy - sy / 2 + r / 2, cz], p.sec);
+      if (p.style === 'shaker') add(par, name + '_c', boxGeo(sx - 2 * r + 2, sy - 2 * r + 2, p.mill ? Math.max(1, sz - p.mill.depth) : sz * 0.45), mat, [cx, cy, cz - (p.mill ? p.mill.depth / 2 : sz * 0.2)], p.sec);
+    } else add(par, name, p.cutouts && p.cutouts.length ? cutGeometry(THREE, p, k) : boxGeo(sx, sy, sz), mat, p.c, p.sec);
 
     if (P.showHoles) for (const h of p.holes) {
       if (h.f !== 'A' && h.f !== 'B') continue;
@@ -71,14 +118,14 @@ export function build3D(THREE, spec, P) {
 
   const links = [];
   spec.extras.forEach(e => {
-    if (hidden(e.group)) return;
+    if (hidden(e.group) || skipStage(e.asm)) return;
     const par = parentFor(e.group);
     if (e.kind === 'link') { links.push([e, par]); return; }
     let geo;
     if (e.kind === 'cyl') geo = new THREE.CylinderGeometry(e.r * k, e.r * k, e.len * k, 24);
     else if (e.kind === 'sphere') geo = new THREE.SphereGeometry(e.r * k, 24, 16);
     else geo = boxGeo(...e.s);
-    const m = add(par, e.kind === 'box' ? 'profil' : e.kind === 'sphere' ? 'ruchka' : 'metall', geo, M[e.mat], e.c, e.sec);
+    const m = add(par, e.kind === 'box' ? 'profil' : e.kind === 'sphere' ? 'ruchka' : 'metall', geo, hl(e.asm, M[e.mat]), e.c, e.sec);
     if (e.axis === 'x') m.rotation.z = Math.PI / 2;
     if (e.axis === 'z') m.rotation.x = Math.PI / 2;
   });
@@ -92,7 +139,7 @@ export function build3D(THREE, spec, P) {
       : par.obj.localToWorld(new THREE.Vector3(e.b[0] - par.off[0], e.b[1] - par.off[1], e.b[2] - par.off[2]).multiplyScalar(k));
     const dir = b.clone().sub(a), len = dir.length();
     if (len < 1e-6) continue;
-    const m = new THREE.Mesh(new THREE.CylinderGeometry(e.r * k, e.r * k, len, 10), M[e.mat]); m.name = 'rychag';
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(e.r * k, e.r * k, len, 10), hl(e.asm, M[e.mat])); m.name = 'rychag';
     m.position.copy(a).add(b).multiplyScalar(0.5); m.quaternion.setFromUnitVectors(Y, dir.normalize());
     if (e.sec) m.userData.section = e.sec - 1;
     root.add(m);

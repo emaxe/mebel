@@ -2,6 +2,8 @@
 import { presetItems, isDrawer } from './model.js';
 
 export const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+/** Самый низкий ящик: короб 70 мм + 20 мм от низа фасада (model-fronts.js) должны уместиться в высоту ящика. */
+export const MIN_DRAWER_H = 100;
 export const innerH = P => P.height - (P.base === 'none' ? 0 : P.plinth) - 2 * P.thickness;
 
 const ZONE_ITEMS = ['shelf', 'fixed', 'glass']; // в колонках зоны только полки
@@ -19,7 +21,7 @@ export const FILL_LABELS = { shelves: 'Полки', shelves1: 'Одна полк
 export function fillItems(kind, P) {
   const h = innerH(P), t = P.thickness, d = (n, hh) => Array.from({ length: n }, (_, i) => ({ type: 'drawer', y: i * hh, h: hh }));
   const m = /^drawers(\d)$/.exec(kind);
-  if (m) return d(+m[1], Math.floor(h / +m[1]));
+  if (m) { const k = Math.min(+m[1], Math.max(1, Math.floor(h / MIN_DRAWER_H))); return d(k, Math.floor(h / k)); } // ящиков не больше, чем помещается по высоте
   if (kind === 'drawersShelf') { const hh = clamp(Math.round(h / 30) * 10, 120, 300); return [...d(1, hh), { type: 'shelf', y: Math.round(hh + (h - hh - t) / 2) }]; }
   if (kind === 'idrawers') { // two hidden drawers at the bottom, shelves above them
     const hh = clamp(Math.round(h / 80) * 10, 120, 200), top = 2 * hh, k = Math.max(0, Math.round((h - top) / 360) - 1);
@@ -31,11 +33,11 @@ export function fillItems(kind, P) {
 }
 
 // ── presets
-export const BASE = { joint: 'confirmat', thickness: 18, backType: 'groove', cornice: false, hatShelf: 350, doorType: 'hinged', slidingDoors: 3, slidingStyle: 'mirror', frontT: 16, handle: 'bar', handleSize: 128, handleOrient: 'v', edgeFront: 2, edgeHidden: 0.4, shelfSetback: 20, open: 0, hideDoors: false, showHoles: false, topOverhang: 0, fit: true, fitMode: 'prop' };
+export const BASE = { cutouts: [], fittings: {}, slide: 'ball', hinge: 'soft', push: false, wallFix: false, joint: 'confirmat', thickness: 18, backType: 'groove', cornice: false, hatShelf: 350, doorType: 'hinged', slidingDoors: 3, slidingStyle: 'mirror', frontT: 16, handle: 'bar', handleSize: 128, handleOrient: 'v', edgeFront: 2, edgeHidden: 0.4, shelfSetback: 20, open: 0, hideDoors: false, showHoles: false, topOverhang: 0, fit: true, fitMode: 'prop' };
 const sec = (width, door, fill, o = {}) => ({ width, door, fill, split: 0, frontStyle: 'flat', ...o });
 export const PRESETS = {
-  wardrobe: { height: 2300, depth: 600, base: 'plinth', plinth: 80, topType: 'inset', sections: [sec(500, 'left', 'drawersShelves'), sec(800, 'double', 'rod'), sec(500, 'right', 'rodShelves')] },
-  rack: { height: 1800, depth: 350, base: 'plinth', plinth: 60, topType: 'inset', handle: 'none', sections: [sec(600, 'none', 'shelves'), sec(600, 'none', 'shelves'), sec(600, 'none', 'shelves')] },
+  wardrobe: { wallFix: true, height: 2300, depth: 600, base: 'plinth', plinth: 80, topType: 'inset', sections: [sec(500, 'left', 'drawersShelves'), sec(800, 'double', 'rod'), sec(500, 'right', 'rodShelves')] },
+  rack: { wallFix: true, height: 1800, depth: 350, base: 'plinth', plinth: 60, topType: 'inset', handle: 'none', sections: [sec(600, 'none', 'shelves'), sec(600, 'none', 'shelves'), sec(600, 'none', 'shelves')] },
   nightstand: { height: 550, depth: 420, base: 'legs', plinth: 100, topType: 'overlay', topOverhang: 15, handleOrient: 'h', sections: [sec(450, 'none', 'drawers2')] },
   dresser: { height: 850, depth: 450, base: 'plinth', plinth: 60, topType: 'overlay', topOverhang: 15, handleOrient: 'h', sections: [sec(500, 'none', 'drawers4'), sec(500, 'none', 'drawers4')] },
   tv: { height: 450, depth: 400, base: 'legs', plinth: 120, topType: 'overlay', topOverhang: 10, handle: 'profile', sections: [sec(500, 'left', 'shelves1'), sec(700, 'none', 'shelves1'), sec(500, 'none', 'drawers2')] },
@@ -60,7 +62,7 @@ export const zoneSpan = (z, ih, t, withShelf = false) => {
 };
 function normalizeZone(s, R, ih, t) {
   const z = s.zone;
-  if (!R.zone || !z || typeof z !== 'object') { s.zone = null; return; }
+  if (!R.zone || !z || typeof z !== 'object' || ih < 400) { s.zone = null; return; } // зоне нужно хотя бы 150 мм и 250 мм под основную часть секции
   if (z.pos !== 'top') z.pos = 'bottom';
   z.h = clamp(Math.round(z.h || 300), 150, Math.max(150, ih - 250));
   z.split = clamp(Math.round(z.split || (s.width - t) / 2), 100, Math.max(100, s.width - t - 100));
@@ -73,6 +75,19 @@ function normalizeZone(s, R, ih, t) {
   s.items = s.items.filter(it => !(it.y >= za - 0.5 && it.y + hOf(it, t) <= zb + 0.5));
 }
 
+/**
+ * Вырезы в деталях: { part: имя детали, sec: 0 (все) или номер секции, kind: 'hole' | 'notch', w, h, r, u, v, corner }.
+ * hole — прямоугольный вырез со скруглением r, центр в (u, v) от кромок Ш1 и Д1; notch — выемка в углу corner ('w1d1'…'w2d2'), размер w×h, r — радиус внутреннего угла.
+ */
+const CORNERS = ['w1d1', 'w1d2', 'w2d1', 'w2d2'];
+export function normalizeCutouts(list) {
+  const num = (v, d) => (Number.isFinite(+v) && v !== '' && v !== null ? +v : d);
+  return (Array.isArray(list) ? list : []).slice(0, 20).filter(c => c && typeof c === 'object').map(c => {
+    const w = clamp(num(c.w, 60), 5, 3000), h = clamp(num(c.h, 60), 5, 3000);
+    return { part: String(c.part || 'Задняя стенка').slice(0, 60), sec: Math.max(0, Math.round(num(c.sec, 0))), kind: c.kind === 'notch' ? 'notch' : 'hole', w, h, r: clamp(num(c.r, 0), 0, Math.min(w, h) / 2), u: num(c.u, 0), v: num(c.v, 0), corner: CORNERS.includes(c.corner) ? c.corner : 'w1d1' };
+  });
+}
+
 /** Bring a project to what its type supports: ranges, doors, antresol, items, front mode. Idempotent. */
 export function normalize(P) {
   if (!TYPE_RULES[P.type]) P.type = 'wardrobe';
@@ -82,9 +97,17 @@ export function normalize(P) {
   if (P.fitMode !== 'even') P.fitMode = 'prop';
   if (!['confirmat', 'minifix', 'dowel'].includes(P.joint)) P.joint = 'confirmat';
   if (!R.sliding) P.doorType = 'hinged';
+  if (!['ball', 'ballSoft', 'hidden', 'roller'].includes(P.slide)) P.slide = 'ball';
+  if (!['soft', 'plain', 'wide'].includes(P.hinge)) P.hinge = 'soft';
+  P.wallFix = !!P.wallFix;
+  P.cutouts = normalizeCutouts(P.cutouts);
+  if (!P.fittings || typeof P.fittings !== 'object' || Array.isArray(P.fittings)) P.fittings = {};
+  P.push = !!P.push && P.handle === 'none'; // push-to-open работает только без ручек
+  if (P.push) { if (P.hinge !== 'plain') P.hinge = 'plain'; if (P.slide === 'ballSoft') P.slide = 'ball'; } // доводчик гасит толчок
   if (!R.cornice) P.cornice = false;
   P.sections = (P.sections || []).slice(0, R.maxSec);
   if (!P.sections.length) P.sections = [newSection(P)];
+  if (P.base !== 'none') P.plinth = clamp(P.plinth, 40, Math.max(40, P.height - 200)); // основание не должно съедать изделие: внутри остаётся не меньше ~150 мм
   const ih = innerH(P);
   for (const s of P.sections) {
     s.width = clamp(s.width, ...R.secW);
@@ -96,8 +119,8 @@ export function normalize(P) {
     const top = Math.max(0, ...s.items.filter(it => it.type === 'drawer').map(it => it.y + it.h)); // visible drawers only
     if (s.drawerFronts === 'overlay' && s.door !== 'none' && top > 0 && ih - top < 130) s.drawerFronts = 'inset'; // no room for a door above overlay drawers
     for (const it of s.items) {
-      if (isDrawer(it.type)) { it.h = clamp(it.h || 180, 80, 500); it.y = clamp(it.y, 0, Math.max(0, ih - it.h)); }
-      else it.y = clamp(it.y, 0, it.type === 'rod' ? ih : Math.max(0, ih - t));
+      if (isDrawer(it.type)) { it.h = clamp(it.h || 180, MIN_DRAWER_H, 500); it.y = clamp(it.y, 0, Math.max(0, ih - it.h)); }
+      else it.y = clamp(it.y, it.type === 'shelf' || it.type === 'glass' ? 8 : 0, it.type === 'rod' ? ih : Math.max(8, ih - t)); // съёмной полке нужен ряд полкодержателей под ней
     }
     normalizeZone(s, R, ih, t);
   }
@@ -166,7 +189,7 @@ function stackDrawers(dr, zone, graded) {
 /** A stack of n drawers from the bottom up to `zone` mm: equal heights, or graduated (taller at the bottom). */
 export function autoDrawers(sec, ih, t, { n, zone = ih, graded = false } = {}) {
   zone = clamp(Math.round(zone), 160, ih);
-  n = clamp(Math.round(n), Math.max(1, Math.ceil(zone / 500)), Math.max(1, Math.floor(zone / 80)));
+  n = clamp(Math.round(n), Math.max(1, Math.ceil(zone / 500)), Math.max(1, Math.floor(zone / MIN_DRAWER_H)));
   const old = sec.items.filter(it => isDrawer(it.type)).sort((a, b) => a.y - b.y).map(it => it.type);
   const keep = sec.items.filter(it => !isDrawer(it.type) && !(it.type === 'rod' ? it.y < zone : it.type === 'fixed' ? it.y < zone - 0.5 : it.y < zone + t));
   const dr = Array.from({ length: n }, (_, i) => ({ type: old[i] || old[old.length - 1] || 'drawer', y: 0, h: 0 }));
@@ -197,7 +220,7 @@ export function fitSections(P, oldIh, newIh, mode = 'prop') {
     if (mode === 'even') {
       for (const it of s.items) if (!isDrawer(it.type) && it.type !== 'shelf' && it.type !== 'glass') it.y = Math.round(it.y * r);
       const dr = s.items.filter(it => isDrawer(it.type)).sort((a, b) => a.y - b.y);
-      if (dr.length) stackDrawers(dr, clamp(Math.round(Math.max(...dr.map(d => d.y + d.h)) * r), 80 * dr.length, newIh), false);
+      if (dr.length) stackDrawers(dr, clamp(Math.round(Math.max(...dr.map(d => d.y + d.h)) * r), MIN_DRAWER_H * dr.length, newIh), false);
       redistribute(s, newIh, t, { s32: false });
     } else for (const it of s.items) {
       const y0 = Math.round(it.y * r);

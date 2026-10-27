@@ -1,5 +1,6 @@
 // Смета: материалы, кромка, фурнитура, работы, наценка. Без DOM; цены берёт из справочника (catalog.js).
-import { sheetFor, hwPrice } from './catalog.js';
+import { sheetFor } from './catalog.js';
+import { shoppingList } from './fittings.js';
 
 const money = v => Math.round(v * 100) / 100;
 
@@ -7,7 +8,7 @@ const money = v => Math.round(v * 100) / 100;
  * groups — результат groupParts, N — результат nest, E — edgeSummary. Возвращает { sections: [{title, lines:[{name, qty, unit, price, sum}]}], subtotal, markup, total, missing }.
  * Строки без цены в справочнике имеют price = null и в сумму не входят; их названия попадают в missing.
  */
-export function estimate(spec, groups, N, E, cat) {
+export function estimate(spec, groups, N, E, cat, P = {}) {
   const missing = [], sections = [];
   const sec = (title, lines) => { sections.push({ title, lines, sum: money(lines.reduce((a, l) => a + (l.sum || 0), 0)) }); return sections[sections.length - 1]; };
 
@@ -35,10 +36,10 @@ export function estimate(spec, groups, N, E, cat) {
   });
   const edge = sec('Кромка', edgeLines);
 
-  const hwLines = spec.hw.map(([name, q]) => {
-    const p = hwPrice(cat, name);
-    if (!p) missing.push(name);
-    return { name, qty: q, unit: 'шт', price: p, sum: money(q * (p || 0)) };
+  // фурнитура: по списку покупок (упаковки и хлысты × цена выбранной модели)
+  const hwLines = shoppingList(spec, cat, P).map(l => {
+    if (l.missing) missing.push(l.title);
+    return { name: l.title, qty: l.packs, unit: l.unit === 'уп.' ? `уп. (${l.pack} шт)` : l.unit, price: l.price, sum: l.sum };
   });
   const hw = sec('Фурнитура', hwLines);
 

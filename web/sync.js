@@ -5,7 +5,7 @@ import { newId, uniqueName } from './projects.js';
 import { CATALOG_KEY } from './catalog.js';
 
 export const SYNC_KEY = 'mebel-sync';
-const VIEW_KEYS = ['open', 'hideDoors', 'showHoles']; // параметры вида правкой не считаются (как в отмене/повторе)
+const VIEW_KEYS = ['open', 'hideDoors', 'showHoles', 'asmStep']; // параметры вида правкой не считаются (как в отмене/повторе)
 const OFFLINE = Symbol('offline'), UNAUTH = Symbol('unauth');
 
 /** JSON с отсортированными ключами: порядок ключей (после jsonb и normalize он другой) на хеш не влияет. */

@@ -2,6 +2,8 @@
 import { buildSpec } from './model.js';
 import { normalize } from './rules.js';
 import { build3D } from './build3d.js';
+import { loadCatalog } from './catalog.js';
+import { resolveHw } from './fittings.js';
 
 const token = new URLSearchParams(location.search).get('t');
 const msg = document.getElementById('msg');
@@ -11,7 +13,7 @@ const r = token ? await fetch('api/share/' + encodeURIComponent(token)).then(x =
 if (!r) fail('Ссылка недействительна или отозвана.');
 else {
   const stage = document.querySelector('three-d-stage'), { THREE } = await stage.ready;
-  const P = normalize(r.P), spec = buildSpec(P);
+  const P = normalize(r.P), cat = loadCatalog({ getItem: () => (r.catalog ? JSON.stringify(r.catalog) : null) }), spec = buildSpec(P, { hw: resolveHw(cat, P) });
   document.title = `${r.name} — Конструктор мебели`;
   document.getElementById('name').textContent = r.name;
   document.getElementById('dims').textContent = `${Math.round(spec.meta.W)} × ${P.height} × ${P.depth} мм`;

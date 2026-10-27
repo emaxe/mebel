@@ -26,6 +26,21 @@ describe('проекты', () => {
     expect((await t.call('GET', '/api/projects/p1', { cookie })).json.name).toBe('Шкаф 2');
   });
 
+  it('новые поля проекта (вырезы, модели фурнитуры, режим сборки) сохраняются и возвращаются', async () => {
+    const P = preset();
+    P.cutouts = [{ part: 'Задняя стенка', sec: 0, kind: 'hole', w: 60, h: 40, r: 8, u: 400, v: 300, corner: 'w1d1' }];
+    P.fittings = { 'hinge:soft': 'hinge-soft' }; P.slide = 'hidden'; P.hinge = 'wide'; P.push = false; P.wallFix = true; P.asmStep = 3;
+    expect((await put('p1', proj('С вырезом', 0, P))).status).toBe(200);
+    const g = (await t.call('GET', '/api/projects/p1', { cookie })).json.P;
+    expect(g.cutouts).toEqual(P.cutouts); expect(g.fittings).toEqual(P.fittings);
+    expect(g).toMatchObject({ slide: 'hidden', hinge: 'wide', wallFix: true });
+  });
+
+  it('проект с вырезом в несуществующей детали принимается: расчёт лишь предупреждает', async () => {
+    const P = preset(); P.cutouts = [{ part: 'Нет такой', kind: 'hole', w: 50, h: 50, r: 0, u: 100, v: 100 }];
+    expect((await put('p1', proj('x', 0, P))).status).toBe(200);
+  });
+
   it('устаревший baseVersion → 409 с серверной копией', async () => {
     await put('p1', proj());
     await put('p1', proj('Новое имя', 1));
@@ -220,3 +235,18 @@ describe('служебное', () => {
     expect((await t.call('GET', '/api/health')).json).toEqual({ ok: true });
   });
 });
+
+describe('справочник с моделями фурнитуры', () => {
+  it('полный справочник по умолчанию с параметрами присадки помещается и возвращается без потерь', async () => {
+    const { DEFAULT_CATALOG } = await import('../../web/catalog.js');
+    const data = JSON.parse(JSON.stringify(DEFAULT_CATALOG));
+    data.fittings.find(f => f.id === 'hinge-soft').params = { cupEdge: 22.5, plateSetback: 45 };
+    data.fittings.find(f => f.id === 'slide-ball').params = { lens: '300,400,500', gap: 30 };
+    data.milling.frameW = 80;
+    expect(JSON.stringify(data).length).toBeLessThan(64 * 1024);
+    const r = await t.call('PUT', '/api/catalog', { cookie, body: { data, baseVersion: 0 } });
+    expect(r.status).toBe(200);
+    expect((await t.call('GET', '/api/catalog', { cookie })).json.data).toEqual(data);
+  });
+});
+

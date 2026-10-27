@@ -1,6 +1,6 @@
 #!/bin/sh
 # Сборка и запуск конструктора мебели. Без аргументов — интерактивное меню.
-# Режимы: serve | bg | stop | check | bump | build | menu
+# Режимы: serve | bg | stop | check | bump | build | test | all | servertest | full | dev | menu
 
 cd "$(dirname "$0")" || exit 1
 ROOT=$(pwd)
@@ -93,9 +93,61 @@ do_check() {
       printf '  %-22s ОШИБКА\n' "$f"; sed 's/^/    /' /tmp/mebel_check.err; fail=1
     fi
   done
+  for f in server/src/*.js server/src/*/*.js server/test/*.js test/*.js; do
+    [ -f "$f" ] || continue
+    if node --check "$f" 2>/tmp/mebel_check.err; then :; else
+      printf '  %-22s ОШИБКА\n' "$f"; sed 's/^/    /' /tmp/mebel_check.err; fail=1
+    fi
+  done
   rm -f /tmp/mebel_check.err
-  [ "$fail" -eq 0 ] && ok "Синтаксис в порядке" || { err "Есть ошибки"; return 1; }
+  # service worker: все файлы из ASSETS существуют, а каждый модуль web/*.js в нём есть (иначе офлайн-режим сломается)
+  for a in $(sed -n '/^const ASSETS/,/^];/p' web/service-worker.js | grep -o "'[^']*'" | tr -d "'" | grep -v '^\./$'); do
+    [ -e "web/$a" ] || { printf '  service-worker.js: нет файла web/%s\n' "$a"; fail=1; }
+  done
+  for f in web/*.js; do
+    b=$(basename "$f")
+    case $b in service-worker.js) continue ;; esac
+    grep -q "'$b'" web/service-worker.js || { printf '  service-worker.js: %s не в ASSETS\n' "$b"; fail=1; }
+  done
+  [ "$fail" -eq 0 ] && ok "Синтаксис и список кеша в порядке" || { err "Есть ошибки"; return 1; }
 }
+
+# Тесты ядра (Vitest, папка test/)
+do_test() {
+  command -v npm >/dev/null 2>&1 || { err "Нужен Node.js (npm)"; return 1; }
+  [ -d test/node_modules ] || (cd test && npm install --silent) || return 1
+  (cd test && npm test)
+}
+
+# Тесты сервера (API и синхронизация) на настоящем Postgres: контейнер поднимается на время тестов, если он ещё не запущен
+do_servertest() {
+  command -v docker >/dev/null 2>&1 || { err "Нужен Docker: тестам сервера нужен Postgres"; return 1; }
+  docker info >/dev/null 2>&1 || { err "Docker не запущен"; return 1; }
+  command -v npm >/dev/null 2>&1 || { err "Нужен Node.js (npm)"; return 1; }
+  name=mebel-pg-test; started=0
+  if [ "$(docker inspect -f '{{.State.Running}}' "$name" 2>/dev/null)" != true ]; then
+    port_busy 55432 && { err "Порт 55432 занят не нашим контейнером; задайте TEST_DATABASE_URL или освободите порт"; return 1; }
+    docker rm -f "$name" >/dev/null 2>&1
+    say "Поднимаю Postgres для тестов ($name)…"
+    docker run -d --name "$name" -p 55432:5432 -e POSTGRES_PASSWORD=test -e POSTGRES_DB=mebel_test postgres:16-alpine >/dev/null || return 1
+    started=1
+  fi
+  i=0
+  until docker exec "$name" pg_isready -U postgres -d mebel_test >/dev/null 2>&1; do
+    i=$((i + 1)); [ "$i" -gt 40 ] && { err "Postgres не ответил за 40 с"; [ "$started" = 1 ] && docker rm -f "$name" >/dev/null; return 1; }
+    sleep 1
+  done
+  sleep 1 # pg_isready отвечает чуть раньше, чем БД принимает подключения после инициализации
+  [ -d server/node_modules ] || (cd server && npm install --silent) || { [ "$started" = 1 ] && docker rm -f "$name" >/dev/null; return 1; }
+  (cd server && npm test); rc=$?
+  [ "$started" = 1 ] && { docker rm -f "$name" >/dev/null; say "Контейнер $name остановлен"; }
+  return $rc
+}
+
+# Всё сразу: синтаксис, кеш service worker, тесты ядра
+do_all() { do_check && do_test; }
+# Всё и сервер
+do_full() { do_all && do_servertest; }
 
 # Новая версия кеша service worker — клиенты получат свежие файлы
 do_bump() {
@@ -110,6 +162,7 @@ do_bump() {
 # Статический пакет для публикации (GitHub Pages, Netlify, Vercel)
 do_build() {
   do_check || return 1
+  do_test || return 1
   out="$ROOT/dist"
   rm -rf "$out"; mkdir -p "$out"
   cp web/*.html web/manifest.webmanifest web/*.js "$out"/ 2>/dev/null
@@ -148,6 +201,9 @@ menu() {
     printf '  4) Проверить синтаксис JS\n'
     printf '  5) Поднять версию кеша service worker\n'
     printf '  6) Собрать пакет dist/ и zip для публикации\n'
+    printf '  7) Тесты ядра (Vitest)\n'
+    printf '  8) Всё: синтаксис + тесты ядра\n'
+    printf '  9) Тесты сервера (нужен Docker)\n'
     printf '  0) Выход\n'
     ask "Выбор: "
     case $REPLY in
@@ -157,6 +213,9 @@ menu() {
       4) do_check ;;
       5) do_bump ;;
       6) do_build ;;
+      7) do_test ;;
+      8) do_all ;;
+      9) do_servertest ;;
       0|q|Q) exit 0 ;;
       *) warn "Неизвестный пункт" ;;
     esac
@@ -170,7 +229,11 @@ case ${1:-menu} in
   check) do_check ;;
   bump)  do_bump ;;
   build) do_build ;;
+  test)  do_test ;;
+  all)   do_all ;;
+  servertest) do_servertest ;;
+  full)  do_full ;;
   dev)   do_dev ;;
   menu)  menu ;;
-  *) printf 'Использование: %s [serve|bg|stop|check|bump|build|dev|menu]\n' "$0"; exit 2 ;;
+  *) printf 'Использование: %s [serve|bg|stop|check|bump|build|test|all|servertest|full|dev|menu]\n' "$0"; exit 2 ;;
 esac

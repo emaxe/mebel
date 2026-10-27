@@ -217,3 +217,16 @@ export function closedOverlaps(spec, opts = {}) {
   }
   return out;
 }
+
+/** Doors and drawers that cannot open fully (progress < 97%), as {text, sec, by}. */
+export function kinProblems(spec) {
+  const secOf = new Map();
+  spec.parts.forEach(p => { if (p.group && !secOf.has(p.group.id)) secOf.set(p.group.id, p.sec); });
+  return solve(spec, 1, { skip: g => g.type === 'slidex' }).limits.filter(l => l.q < 0.97).map(l => {
+    const g = l.g, sec = secOf.get(g.id), what = g.type === 'hinge' ? (g.flap ? 'откидной фасад' : 'дверь') : 'ящик';
+    const how = g.type === 'hinge' ? `открывается только на ${Math.round(l.q * (g.maxAngle ?? 90))}°` : `выдвигается только на ${Math.round(l.q * 100)}%`;
+    const by = l.by ? (l.by.name === 'Пол' ? ' — упирается в пол' : ` — мешает «${l.by.name}»${l.by.sec ? ` (секция ${l.by.sec})` : ''}`) : '';
+    return { text: `Секция ${sec}: ${what} ${how}${by}`, sec, by: l.by, g };
+  });
+}
+
