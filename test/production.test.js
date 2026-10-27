@@ -65,3 +65,39 @@ describe('защита от подмены через справочник по 
     expect(safeUrlOf('   ')).toBe('');
   });
 });
+
+import { packOrder, PACK_ORDER, renderProduction as rp } from '../web/production-view.js';
+import { addModule as addMod } from '../web/project.js';
+import { makePreset as mk, normalize as nm } from '../web/rules.js';
+import { DEFAULT_CATALOG as DC } from '../web/catalog.js';
+
+describe('полный пакет документов', () => {
+  const page = P => rp({ P, cat: JSON.parse(JSON.stringify(DC)), projName: 'Проект', preview: null, shareToken: null, bought: new Set(), baseHref: 'http://x/' }).html;
+  const ids = html => [...html.matchAll(/<section id="([^"]+)"/g)].map(m => m[1]);
+  it('титульный лист с оглавлением, каждая ссылка ведёт на существующий раздел', () => {
+    const html = page(mk('wardrobe')), hrefs = [...html.matchAll(/<li><a href="#([^"]+)">/g)].map(m => m[1]);
+    expect(html).toMatch(/class="sheet m-all cover"/); expect(html).toMatch(/Содержание/); expect(html).toContain('data-m="all"');
+    expect(hrefs.length).toBeGreaterThanOrEqual(10);
+    for (const h of hrefs) expect(ids(html), h).toContain(h);
+  });
+  it('идентификаторы разделов уникальны; у проекта из модулей инструкция по каждому модулю', () => {
+    const P = mk('kbase'); addMod(P, mk('kbase'), {}); P.countertop = {}; nm(P);
+    const html = page(P), list = ids(html);
+    expect(new Set(list).size).toBe(list.length);
+    expect(list).toContain('sec-asm-0'); expect(list).toContain('sec-asm-1'); expect(list).toContain('sec-plan');
+    expect(html).toMatch(/href="#sec-asm-1"/);
+  });
+  it('план в оглавлении только когда он есть', () => {
+    expect(page(mk('wardrobe'))).not.toMatch(/href="#sec-plan"/);
+  });
+  it('порядок: титул, задание, спецификация, раскрой, чертежи, сборка, покупки, смета, КП, этикетки; шаги идут за инструкцией', () => {
+    const entries = [{ id: '' }, { id: 'sec-cover' }, { id: '' }, { id: 'sec-task' }, { id: 'sec-views' }, { id: 'sec-est' }, { id: 'sec-kp' }, { id: 'sec-labels' }, { id: 'sec-asm-0' }, { id: '' }, { id: '' }, { id: 'sec-buy' }, { id: 'sec-mats' }, { id: 'sec-spec' }, { id: 'sec-cut' }, { id: 'sec-parts' }];
+    const order = packOrder(entries).map(i => entries[i].id || `(${i})`);
+    expect(order).toEqual(['(0)', 'sec-cover', '(2)', 'sec-task', 'sec-views', 'sec-mats', 'sec-spec', 'sec-cut', 'sec-parts', 'sec-asm-0', '(9)', '(10)', 'sec-buy', 'sec-est', 'sec-kp', 'sec-labels']);
+  });
+  it('порядок устойчив: неизвестные разделы в конце, повторный вызов даёт то же', () => {
+    const e = [{ id: 'sec-zzz' }, { id: 'sec-task' }, { id: '' }];
+    expect(packOrder(e)).toEqual(packOrder(e)); expect(packOrder(e)[0]).toBe(1);
+    expect(PACK_ORDER[0]).toBe('pre');
+  });
+});

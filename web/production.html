@@ -33,7 +33,9 @@
   .muted{color:#8a8478}
   svg text{font-family:"Helvetica Neue",Helvetica,Arial,sans-serif}
   .bar button.on{background:#6b5a45;color:#fff;border-color:#6b5a45}
-  .m-task,.m-kp,.m-labels,.m-asm,.m-buy{display:none}
+  .m-task,.m-kp,.m-labels,.m-asm,.m-buy,.m-all{display:none}
+  body[data-mode=all] .m-task,body[data-mode=all] .m-kp,body[data-mode=all] .m-labels,body[data-mode=all] .m-asm,body[data-mode=all] .m-buy,body[data-mode=all] .m-all{display:block}
+  .toc{columns:2;margin:6px 0 0;padding-left:22px}.toc a{color:inherit}
   body[data-mode=task] .m-task,body[data-mode=kp] .m-kp,body[data-mode=labels] .m-labels,body[data-mode=asm] .m-asm,body[data-mode=buy] .m-buy{display:block}
   .chk{background:#f3f8f1;border:1px solid #b9d3b0;border-radius:6px;padding:10px 14px;margin-bottom:18px;font-size:12.5px}
   .chk.bad{background:#fdf0ee;border-color:#e2a59d}.chk ul{margin:6px 0 0;padding-left:18px}.chk .e{color:#b03a2e}.chk .w{color:#9a6a12}
@@ -61,6 +63,8 @@
   .lab .sz{font-family:ui-monospace,Menlo,monospace;font-size:8pt}
   .lab .mt{color:#555;font-size:7pt}
   @page{margin:0}
+  @page pack{margin:0 0 12mm;@bottom-center{content:counter(page) ' / ' counter(pages);font:10px Helvetica,Arial,sans-serif;color:#8a8478}}
+  body[data-mode=all] .doc{page:pack}
   @media print{body{background:#fff}.doc{padding:12mm;max-width:none}.sheet{border:0;padding:0 0 10mm;break-after:page}.bar{display:none}
     body[data-mode=labels] .doc{padding:0}body[data-mode=labels] .sheet{padding:0;break-after:auto}body[data-mode=labels] h2,body[data-mode=labels] .sheet>p{display:none}.labels{box-shadow:none;margin:0}.lab{border:.2mm dashed #ddd}}
 </style>
@@ -74,7 +78,7 @@
 <script type="module">
 import { toCSV, toDXF } from './export.js';
 import { loadCatalog } from './catalog.js';
-import { renderProduction, shopId, shopUnit } from './production-view.js';
+import { renderProduction, shopId, shopUnit, packOrder } from './production-view.js';
 import { KIND_LABELS } from './fittings.js';
 const doc = document.getElementById('doc');
 // ?share=токен — проект по ссылке для просмотра (с сервера, без входа); иначе текущий проект из localStorage
@@ -94,6 +98,8 @@ let bought = new Set(); try { bought = new Set(JSON.parse(localStorage.getItem(b
 const { html, spec, title, stamp, shop, rub } = renderProduction({ P, cat, projName, preview, shareToken, bought, baseHref: location.href });
 const download = (data, name, type) => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([data], { type })); a.download = name; a.click(); };
 doc.innerHTML = html;
+const natural = [...doc.children];
+const arrange = all => (all ? packOrder(natural.map(n => ({ id: n.id || '' }))).map(i => natural[i]) : natural).forEach(n => doc.append(n));
 // список покупок: отметки «куплено» (хранятся в браузере), CSV, копирование
 {
   const rows = [...document.querySelectorAll('.buy tr[data-i]')], upd = () => {
@@ -110,9 +116,9 @@ doc.innerHTML = html;
   };
 }
 
-const setMode = m => { document.body.dataset.mode = m; document.querySelectorAll('.bar [data-m]').forEach(b => b.classList.toggle('on', b.dataset.m === m)); history.replaceState(null, '', m === 'task' ? location.pathname + location.search : '#' + m); document.title = { task: 'Задание на распил и присадку', kp: 'Коммерческое предложение', labels: 'Этикетки деталей', asm: 'Инструкция по сборке', buy: 'Список покупок' }[m]; };
+const setMode = m => { arrange(m === 'all'); document.body.dataset.mode = m; document.querySelectorAll('.bar [data-m]').forEach(b => b.classList.toggle('on', b.dataset.m === m)); history.replaceState(null, '', m === 'task' ? location.pathname + location.search : '#' + m); document.title = { all: 'Полный пакет документов', task: 'Задание на распил и присадку', kp: 'Коммерческое предложение', labels: 'Этикетки деталей', asm: 'Инструкция по сборке', buy: 'Список покупок' }[m]; };
 document.querySelectorAll('.bar [data-m]').forEach(b => (b.onclick = () => setMode(b.dataset.m)));
-setMode(['kp', 'labels', 'asm', 'buy'].includes(location.hash.slice(1)) ? location.hash.slice(1) : 'task');
+setMode(['kp', 'labels', 'asm', 'buy', 'all'].includes(location.hash.slice(1)) ? location.hash.slice(1) : 'task');
 document.getElementById('pr').onclick = () => print();
 document.getElementById('csv').onclick = () => download(toCSV(spec, title), stamp + '.csv', 'text/csv;charset=utf-8');
 document.getElementById('dxf').onclick = () => download(toDXF(spec), stamp + '.dxf', 'application/dxf');
