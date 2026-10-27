@@ -43,9 +43,9 @@ export const PRESETS = {
   rack: { wallFix: true, height: 1800, depth: 350, base: 'plinth', plinth: 60, topType: 'inset', handle: 'none', sections: [sec(600, 'none', 'shelves'), sec(600, 'none', 'shelves'), sec(600, 'none', 'shelves')] },
   nightstand: { height: 550, depth: 420, base: 'legs', plinth: 100, topType: 'overlay', topOverhang: 15, handleOrient: 'h', sections: [sec(450, 'none', 'drawers2')] },
   dresser: { height: 850, depth: 450, base: 'plinth', plinth: 60, topType: 'overlay', topOverhang: 15, handleOrient: 'h', sections: [sec(500, 'none', 'drawers4'), sec(500, 'none', 'drawers4')] },
-  kbase: { wallFix: true, height: 820, depth: 560, base: 'legs', plinth: 100, topType: 'rails', backType: 'overlay', handleOrient: 'h', sections: [sec(600, 'double', 'shelves1')] },
+  kbase: { wallFix: true, plinthStrip: true, height: 820, depth: 560, base: 'legs', plinth: 100, topType: 'rails', backType: 'overlay', handleOrient: 'h', sections: [sec(600, 'double', 'shelves1')] },
   kwall: { wallFix: true, height: 720, depth: 320, base: 'none', plinth: 0, topType: 'inset', backType: 'overlay', sections: [sec(600, 'double', 'shelves1')] },
-  ktall: { wallFix: true, height: 2200, depth: 560, base: 'legs', plinth: 100, topType: 'inset', backType: 'overlay', sections: [sec(600, 'double', 'shelves')] },
+  ktall: { wallFix: true, plinthStrip: true, height: 2200, depth: 560, base: 'legs', plinth: 100, topType: 'inset', backType: 'overlay', sections: [sec(600, 'double', 'shelves')] },
   tv: { height: 450, depth: 400, base: 'legs', plinth: 120, topType: 'overlay', topOverhang: 10, handle: 'profile', sections: [sec(500, 'left', 'shelves1'), sec(700, 'none', 'shelves1'), sec(500, 'none', 'drawers2')] },
 };
 export function makePreset(type, keep = {}) {
@@ -155,6 +155,7 @@ export function normalize(P) {
     P.overrides = list.map(o => ({ part: o.part.trim().slice(0, 60), sec: Number.isFinite(+o.sec) ? clamp(Math.round(+o.sec), 0, 30) : 0, decor: o.decor.trim().slice(0, 40), color: typeof o.color === 'string' && /^#[0-9a-f]{3,8}$/i.test(o.color) ? o.color : '#cccccc' }));
     if (!P.overrides.length) delete P.overrides;
   }
+  if (!P.plinthStrip || P.base !== 'legs') delete P.plinthStrip; else P.plinthStrip = true;
   P.railW = clamp(Number.isFinite(+P.railW) ? Math.round(+P.railW) : 100, 60, 200);
   P.sections = (P.sections || []).slice(0, R.maxSec);
   if (!P.sections.length) P.sections = [newSection(P)];

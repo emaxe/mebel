@@ -306,6 +306,8 @@ export function checkBuild(spec, P, opts = {}) {
   // полотна купе висят на верхнем рельсе под крышкой
   const topP = parts.find(p => p.name === 'Крышка');
   for (const p of parts) if (p.group && p.group.type === 'slidex' && topP) link(p, topP);
+  // цокольная планка стоит на клипсах, которые цепляются за ножки под дном
+  for (const p of parts) if (p.name === 'Цокольная планка') for (const o of parts) if (o.name === 'Дно') link(p, o);
   // земля: детали на полу и на ножках
   const grounded = new Set(), legs = extras.filter(e => e.name === 'Ножка');
   for (const p of parts) {

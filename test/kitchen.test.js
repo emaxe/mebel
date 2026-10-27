@@ -83,3 +83,29 @@ describe('кухонные модули', () => {
     expect(pr.spec.meta.H).toBeGreaterThanOrEqual(1400 + pr.mods[1].H - 1e-6);
   });
 });
+
+describe('цокольная планка', () => {
+  it('у нижнего модуля и пенала по умолчанию, размеры по ножкам', () => {
+    for (const type of ['kbase', 'ktall']) {
+      const P = makePreset(type), spec = buildSpec(P), s = spec.parts.find(p => p.name === 'Цокольная планка');
+      expect(s, type).toBeTruthy(); expect(s.L).toBeCloseTo(spec.meta.W, 6); expect(s.W).toBe(P.plinth - 5); expect(s.T).toBe(16);
+      expect(s.c[1] - s.W / 2).toBeCloseTo(3, 6);
+      expect(s.c[2] + s.T / 2).toBeCloseTo(P.depth / 2 - 50, 6);
+      expect(errors(P)).toEqual([]);
+    }
+  });
+  it('клипсы по числу ножек', () => {
+    const spec = buildSpec(makePreset('kbase')), legs = spec.extras.filter(e => e.name === 'Ножка').length, hw = Object.fromEntries(spec.hw);
+    expect(hw['Клипса цокольная (к ножке)']).toBe(legs);
+  });
+  it('выключается, нужна только на ножках', () => {
+    const off = makePreset('kbase'); delete off.plinthStrip; expect(buildSpec(off).parts.some(p => p.name === 'Цокольная планка')).toBe(false);
+    const on = makePreset('kbase'); on.base = 'plinth'; normalize(on); expect(on.plinthStrip).toBeUndefined();
+    expect(buildSpec(makePreset('wardrobe')).parts.some(p => p.name === 'Цокольная планка')).toBe(false);
+  });
+  it('фасадный декор, попадает в раскрой отдельной деталью из фасадного материала', () => {
+    const P = makePreset('kbase'), spec = buildSpec(P), s = spec.parts.find(p => p.name === 'Цокольная планка');
+    expect(s.label).toBe(`ЛДСП ${P.frontName}`); expect(s.mat).toBe('front');
+    expect(nest(groupParts(spec)).over).toEqual([]);
+  });
+});

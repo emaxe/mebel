@@ -6,7 +6,7 @@ import { defaultHw } from './hwparams.js';
 
 /** Порядок этапов сборки; asm у детали и у extra — ключ этапа. */
 export const STAGES = ['base', 'carcass', 'dividers', 'fixed', 'back', 'top', 'backOverlay', 'cornice', 'shelves', 'rods', 'drawerBox', 'drawers', 'doors', 'flaps', 'handles', 'kupe', 'final'];
-const HW_KINDS = [[/^Конфирмат/, 'confirmat'], [/^Эксцентрик/, 'minifix'], [/^Шкант/, 'dowel'], [/^Полкодержатель/, 'shelfPin'], [/^Штангодержатель/, 'rodHolder'], [/^Штанга/, 'rod'], [/^Петля/, 'hinge'], [/^Направляющие/, 'slide'], [/^Ручка/, 'handle'], [/^Уголок мебельный/, 'bracket'], [/^Опора/, 'leg'], [/^(Саморез|Винт)/, 'screw'], [/^Клей/, 'glue'], [/^Газлифт/, 'gasLift'], [/^Стабилизатор/, 'stay'], [/^Рельс купе/, 'kupeRail'], [/^Профиль купе/, 'kupeProfile'], [/^Ролики/, 'kupeRoller'], [/^Толкатель/, 'pushLatch'], [/^Заглушка/, 'plug'], [/^Навес/, 'hanger'], [/^Анкер/, 'wallFix'], [/^Дюбель/, 'wallDowel']];
+const HW_KINDS = [[/^Конфирмат/, 'confirmat'], [/^Эксцентрик/, 'minifix'], [/^Шкант/, 'dowel'], [/^Полкодержатель/, 'shelfPin'], [/^Штангодержатель/, 'rodHolder'], [/^Штанга/, 'rod'], [/^Петля/, 'hinge'], [/^Направляющие/, 'slide'], [/^Ручка/, 'handle'], [/^Уголок мебельный/, 'bracket'], [/^Опора/, 'leg'], [/^(Саморез|Винт)/, 'screw'], [/^Клей/, 'glue'], [/^Газлифт/, 'gasLift'], [/^Стабилизатор/, 'stay'], [/^Рельс купе/, 'kupeRail'], [/^Профиль купе/, 'kupeProfile'], [/^Ролики/, 'kupeRoller'], [/^Толкатель/, 'pushLatch'], [/^Заглушка/, 'plug'], [/^Навес/, 'hanger'], [/^Клипса/, 'clip'], [/^Анкер/, 'wallFix'], [/^Дюбель/, 'wallDowel']];
 /** Категория фурнитуры по названию позиции. */
 export const hwKind = name => (HW_KINDS.find(([re]) => re.test(name)) || [0, 'other'])[1];
 /** Drawer with a visible front, or a built-in one hidden behind the section's door. */
@@ -169,6 +169,12 @@ export function buildSpec(P, opts = {}) {
     const lx = W > 1200 ? [-1, 0, 1] : [-1, 1];
     for (const sx of lx) for (const sz of [-1, 1]) extra({ kind: 'cyl', mat: 'metal', name: 'Ножка', r: 16, len: b, axis: 'y', c: [sx * (W / 2 - 50), b / 2, sz * (D / 2 - 50)] });
     addHw(`Опора мебельная H=${b} мм`, lx.length * 2);
+    if (P.plinthStrip) {
+      stage = 'final';
+      const sh = b - 5;
+      part({ name: 'Цокольная планка', plane: 'xy', mat: 'front', label: `ЛДСП ${P.frontName}`, T: 16, L: W, W: sh, c: [0, 3 + sh / 2, D / 2 - 50 - 8], edges: { d1: eF, d2: eF }, notes: ['крепится клипсами к ножкам, утоплена на 50 мм от фасада; зазор до пола 3 мм'] });
+      addHw('Клипса цокольная (к ножке)', lx.length * 2);
+    }
   }
   stage = 'cornice';
   if (P.cornice) addHw('Саморез 4×30 (карниз)', Math.ceil((2 * (W + 30 + Dc + 20)) / 300));
