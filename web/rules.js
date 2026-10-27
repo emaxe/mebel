@@ -89,8 +89,9 @@ export function normalizeCutouts(list) {
 }
 
 /** Bring a project to what its type supports: ranges, doors, antresol, items, front mode. Idempotent. */
-export const SCHEMA = 1;
-const MIGRATIONS = [P => P];
+export const SCHEMA = 2;
+const MIGRATIONS = [P => P, P => P];
+export const MAX_MODULES = 12;
 
 export function schemaOf(P) { return Number.isInteger(P.schema) && P.schema >= 0 ? P.schema : 0; }
 
@@ -98,8 +99,25 @@ export function migrate(P) {
   let v = schemaOf(P);
   if (v > SCHEMA) return false;
   for (; v < SCHEMA; v++) MIGRATIONS[v](P);
-  P.schema = SCHEMA;
+  P.schema = Array.isArray(P.modules) && P.modules.length ? 2 : 1;
   return true;
+}
+
+/** Дополнительные модули проекта: P.modules = [{ name, gap, y, P }]. Основной корпус — сам P (его имя и подъём — modName, modY). */
+export function normalizeModules(P) {
+  const list = Array.isArray(P.modules) ? P.modules : [];
+  P.modules = list.filter(m => m && typeof m === 'object' && m.P && typeof m.P === 'object' && Array.isArray(m.P.sections) && m.P.sections.length).slice(0, MAX_MODULES - 1);
+  const int = (v, lo, hi) => clamp(Number.isFinite(+v) && v !== '' && v !== null ? Math.round(+v) : 0, lo, hi);
+  for (const m of P.modules) {
+    m.name = typeof m.name === 'string' && m.name.trim() ? m.name.trim().slice(0, 40) : 'Модуль';
+    m.gap = int(m.gap, 0, 2000); m.y = int(m.y, 0, 3000);
+    delete m.P.modules; delete m.P.modName; delete m.P.modY;
+    normalize(m.P);
+  }
+  if (!P.modules.length) delete P.modules;
+  if (typeof P.modName === 'string' && P.modName.trim()) P.modName = P.modName.trim().slice(0, 40); else delete P.modName;
+  if (P.modY !== undefined) { P.modY = int(P.modY, 0, 3000); if (!P.modY) delete P.modY; }
+  return P;
 }
 
 export function normalize(P) {
@@ -138,7 +156,7 @@ export function normalize(P) {
     }
     normalizeZone(s, R, ih, t);
   }
-  return P;
+  return normalizeModules(P);
 }
 
 // ── auto-fill

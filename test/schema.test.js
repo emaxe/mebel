@@ -5,14 +5,14 @@ import { projectFile, parseProjectFile } from '../web/projects.js';
 
 describe('версия схемы проекта', () => {
   it('новый проект несёт текущую версию', () => {
-    expect(makePreset('wardrobe').schema).toBe(SCHEMA);
+    expect(makePreset('wardrobe').schema).toBe(1);
   });
   it('старый проект без поля schema мигрирует без изменения расчёта', () => {
     const P = makePreset('dresser'), before = JSON.stringify(buildSpec(P).parts);
     const legacy = JSON.parse(JSON.stringify(P)); delete legacy.schema;
     expect(schemaOf(legacy)).toBe(0);
     expect(migrate(legacy)).toBe(true);
-    expect(legacy.schema).toBe(SCHEMA);
+    expect(legacy.schema).toBe(1);
     expect(JSON.stringify(buildSpec(normalize(legacy)).parts)).toBe(before);
   });
   it('мусорное значение schema трактуется как 0', () => {
@@ -31,7 +31,7 @@ describe('версия схемы проекта', () => {
   it('файл проекта сохраняет версию и читается обратно', () => {
     const P = makePreset('tv'), db = { a: { name: 'Т', P } };
     const back = parseProjectFile(projectFile(db, 'a'));
-    expect(back.P.schema).toBe(SCHEMA);
+    expect(back.P.schema).toBe(1);
     expect(back.name).toBe('Т');
   });
 });
