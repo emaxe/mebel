@@ -159,8 +159,14 @@ export function normalize(P) {
   if (!R.cornice) P.cornice = false;
   if (!['inset', 'overlay', 'rails'].includes(P.topType) || (P.topType === 'rails' && !R.rails)) P.topType = 'inset';
   if (P.overrides !== undefined) {
-    const list = (Array.isArray(P.overrides) ? P.overrides : []).filter(o => o && typeof o === 'object' && typeof o.part === 'string' && o.part.trim() && typeof o.decor === 'string' && o.decor.trim()).slice(0, 30);
-    P.overrides = list.map(o => ({ part: o.part.trim().slice(0, 60), sec: Number.isFinite(+o.sec) ? clamp(Math.round(+o.sec), 0, 30) : 0, decor: o.decor.trim().slice(0, 40), color: typeof o.color === 'string' && /^#[0-9a-f]{3,8}$/i.test(o.color) ? o.color : '#cccccc' }));
+    const EDGE_T = [0, 0.4, 1, 2];
+    const list = (Array.isArray(P.overrides) ? P.overrides : []).filter(o => o && typeof o === 'object' && typeof o.part === 'string' && o.part.trim() && ((typeof o.decor === 'string' && o.decor.trim()) || EDGE_T.includes(+o.edgeT))).slice(0, 30);
+    P.overrides = list.map(o => {
+      const r = { part: o.part.trim().slice(0, 60), sec: Number.isFinite(+o.sec) ? clamp(Math.round(+o.sec), 0, 30) : 0 };
+      if (typeof o.decor === 'string' && o.decor.trim()) { r.decor = o.decor.trim().slice(0, 40); r.color = typeof o.color === 'string' && /^#[0-9a-f]{3,8}$/i.test(o.color) ? o.color : '#cccccc'; }
+      if (o.edgeT !== undefined && o.edgeT !== null && EDGE_T.includes(+o.edgeT)) r.edgeT = +o.edgeT;
+      return r;
+    });
     if (!P.overrides.length) delete P.overrides;
   }
   if (!P.plinthStrip || P.base !== 'legs') delete P.plinthStrip; else P.plinthStrip = true;

@@ -41,8 +41,8 @@ function buildFiller(P) {
 }
 
 export function buildSpec(P, opts = {}) {
-  if (P.type === 'kfill') return buildFiller(P);
-  if (P.type === 'kcorner') return buildCorner(P, opts.hw || defaultHw(P));
+  if (P.type === 'kfill') return withOverrides(buildFiller(P), P, opts);
+  if (P.type === 'kcorner') return withOverrides(buildCorner(P, opts.hw || defaultHw(P)), P, opts);
   const hw_ = opts.hw || defaultHw(P), pin = hw_.pin;
   const S = P.sections, n = S.length, t = P.thickness, H = P.height, D = P.depth;
   const W = S.reduce((a, s) => a + s.width, 0) + (n + 1) * t;
@@ -380,14 +380,25 @@ export function buildSpec(P, opts = {}) {
     const heads = vis.reduce((a, [p, f]) => a + p.holes.filter(h => h.f === f && h.d === 7 && h.h === 'скв.').length, 0);
     if (heads) { at('final', () => addHw('Заглушка на конфирмат', heads)); for (const [p] of vis) p.notes.push('шляпки конфирматов на лицевой пласти закрыть заглушками под цвет корпуса'); }
   }
-  // подмена декора отдельных деталей: P.overrides = [{ part, sec, decor, color }]
-  for (const o of P.overrides || []) for (const p of parts) {
-    if ((p.mat === 'body' || p.mat === 'front') && /^ЛДСП/.test(p.label) && p.name === o.part && (!o.sec || p.sec === o.sec)) {
-      p.label = `ЛДСП ${o.decor}`; p.color = o.color; p.notes = [...p.notes, `декор «${o.decor}» вместо основного`];
-    }
-  }
+  applyOverrides(parts, [...(opts.inherit || []), ...(P.overrides || [])]);
   return { parts, extras, hwx: [...hwx.values()], hw: [...hw.entries()], warnings, meta: { W, H: H + (P.cornice ? t : 0), D, yB, yT, ih, sections: secMeta } };
 }
+
+/**
+ * Правила деталей: [{ part, sec, decor?, color?, edgeT? }] — декор и толщина кромки отдельной детали (edgeT 0 снимает кромку со всех сторон).
+ * Наследование: правила проекта (inherit) действуют на все модули, правила модуля идут следом и перекрывают их.
+ */
+export function applyOverrides(parts, list) {
+  for (const o of list) for (const p of parts) {
+    if (!((p.mat === 'body' || p.mat === 'front') && /^ЛДСП/.test(p.label) && p.name === o.part && (!o.sec || p.sec === o.sec))) continue;
+    if (o.decor) { p.label = `ЛДСП ${o.decor}`; p.color = o.color; p.notes = [...p.notes, `декор «${o.decor}» вместо основного`]; }
+    if (o.edgeT !== undefined) {
+      p.edges = Object.fromEntries(Object.entries(p.edges).map(([k, v]) => [k, v ? o.edgeT : v]));
+      p.notes = [...p.notes, o.edgeT ? `кромка ${o.edgeT} мм по всем окантованным сторонам` : 'без кромки'];
+    }
+  }
+}
+const withOverrides = (spec, P, opts) => { applyOverrides(spec.parts, [...(opts.inherit || []), ...(P.overrides || [])]); return spec; };
 
 /** Вырезы проекта (P.cutouts) ложатся на детали по имени; в детали — p.cutouts = [{ kind, u0, v0, u1, v1, r, corner? }] в её координатах. */
 function applyCutouts(P, parts, warnings) {

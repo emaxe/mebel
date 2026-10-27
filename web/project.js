@@ -125,7 +125,7 @@ function placed(spec, i, d) {
  */
 export function buildProject(root, { hwFor } = {}) {
   const list = moduleList(root);
-  const mods = list.map(m => ({ ...m, spec: buildSpec(m.P, hwFor ? { hw: hwFor(m.P) } : {}) }));
+  const mods = list.map(m => ({ ...m, spec: buildSpec(m.P, { ...(hwFor ? { hw: hwFor(m.P) } : {}), ...(m.i && root.overrides ? { inherit: root.overrides } : {}) }) }));
   const wt = normalizeWorktop(root.countertop);
   if (mods.length === 1) {
     const m = { ...mods[0], x: 0, y: 0, z: 0, rot: 0, run: 0, s: 0, left: 0, W: mods[0].spec.meta.W, H: mods[0].spec.meta.H, D: mods[0].spec.meta.D };

@@ -59,3 +59,39 @@ describe('декор отдельных деталей', () => {
     expect(normalize(clone(withOv('rack', [{ part: 'Дно', decor: 'Дуб', color: '#aabbcc' }]))).overrides[0].decor).toBe('Дуб');
   });
 });
+
+describe('кромка отдельных деталей и наследование правил', () => {
+  it('edgeT меняет толщину только на окантованных сторонах, 0 снимает кромку', () => {
+    const base = buildSpec(makePreset('wardrobe')).parts.find(p => p.name === 'Боковина левая');
+    const P = withOv('wardrobe', [{ part: 'Боковина левая', edgeT: 2 }]), l = buildSpec(P).parts.find(p => p.name === 'Боковина левая');
+    for (const k of Object.keys(base.edges)) expect(l.edges[k]).toBe(base.edges[k] ? 2 : 0);
+    expect(l.label).toBe(base.label);
+    const none = buildSpec(withOv('wardrobe', [{ part: 'Боковина левая', edgeT: 0 }])).parts.find(p => p.name === 'Боковина левая');
+    expect(Object.values(none.edges).every(v => v === 0)).toBe(true);
+  });
+  it('правило без декора и без кромки отбрасывается, мусорная кромка тоже', () => {
+    const P = withOv('wardrobe', [{ part: 'Дно' }, { part: 'Дно', edgeT: 5 }, { part: 'Дно', edgeT: 1 }]);
+    expect(P.overrides).toEqual([{ part: 'Дно', sec: 0, edgeT: 1 }]);
+  });
+  it('пильный размер учитывает утолщённую кромку, детали группируются отдельно', () => {
+    const P = withOv('wardrobe', [{ part: 'Боковина левая', edgeT: 2 }]), G = groupParts(buildSpec(P)), base = groupParts(buildSpec(makePreset('wardrobe')));
+    const g = G.find(x => x.name === 'Боковина левая'), b = base.find(x => x.name === 'Боковина левая');
+    expect(g.saw.L + g.saw.W).toBeLessThan(b.saw.L + b.saw.W);
+  });
+  it('правило проекта действует на дополнительные модули, правило модуля перекрывает его', async () => {
+    const { addModule, buildProject } = await import('../web/project.js');
+    const root = makePreset('dresser'); root.overrides = [{ part: 'Боковина левая', decor: 'Дуб', color: '#c49a6c' }]; normalize(root);
+    addModule(root, makePreset('dresser'), { name: 'Второй' });
+    const second = root.modules[0].P; normalize(root);
+    let proj = buildProject(root), lefts = proj.spec.parts.filter(p => p.name === 'Боковина левая');
+    expect(lefts.length).toBe(2); expect(lefts.every(p => p.label === 'ЛДСП Дуб')).toBe(true);
+    second.overrides = [{ part: 'Боковина левая', decor: 'Графит', color: '#333333' }]; normalize(root);
+    proj = buildProject(root); lefts = proj.spec.parts.filter(p => p.name === 'Боковина левая');
+    expect(lefts.map(p => p.label).sort()).toEqual(['ЛДСП Графит', 'ЛДСП Дуб']);
+  });
+  it('правила работают и у углового модуля', () => {
+    const P = makePreset('kcorner'); P.overrides = [{ part: 'Дно', edgeT: 2 }]; normalize(P);
+    const sp = buildSpec(P), d = sp.parts.filter(p => p.name === 'Дно');
+    if (d.length) expect(d.every(p => Object.values(p.edges).every(v => v === 0 || v === 2))).toBe(true);
+  });
+});
