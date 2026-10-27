@@ -64,3 +64,21 @@ export function roomWarnings(proj, room) {
   }
   return out;
 }
+
+/** Ширина ряда вдоль стены A (все модули run 0) и его край u1 при текущем отступе. */
+export function rowExtent(proj, room) {
+  const f = roomFrame(proj, room), ps = proj.mods.filter(m => m.run === 0).map(m => f.place(m));
+  return { u0: Math.min(...ps.map(p => p.u0)), u1: Math.max(...ps.map(p => p.u1)), width: Math.max(...ps.map(p => p.u1)) - Math.min(...ps.map(p => p.u0)) };
+}
+
+/**
+ * Отступ ряда room.x для привязки к стене: 'start' — в угол (левый край или угол), 'center' — по центру стены, 'end' — к правому краю.
+ * При угловом ряде ряд всегда стоит в углу: подходит только 'start'. Возвращает отступ в мм или null.
+ */
+export function alignOffset(proj, room, mode) {
+  const f = roomFrame(proj, room);
+  if (mode === 'start') return 0;
+  if (f.corner) return null;
+  const { width } = rowExtent(proj, room);
+  return Math.max(0, Math.round(mode === 'center' ? (room.w - width) / 2 : room.w - width));
+}

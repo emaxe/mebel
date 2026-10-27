@@ -9,11 +9,13 @@ import { modelsFor, selKey, variantOf, resolveHw, KIND_LABELS } from './fittings
 import { HW_PARAM_DEFS, HW_DEFAULTS } from './hwparams.js';
 import { dimensions } from './dims.js';
 import { normalizeWorktop, WORKTOP_DEFAULT, CUTOUT_PRESETS, worktopRuns } from './worktop.js';
-import { normalizeRoom, ROOM_DEFAULT, OPENING_KINDS, MAX_OPENINGS } from './room.js';
-import { buildProject, moduleList, addModule, duplicateModule, removeModule, moveModule, setModuleProps, cabinetOf, moduleCount } from './project.js';
+import { normalizeRoom, ROOM_DEFAULT, OPENING_KINDS, MAX_OPENINGS, alignOffset } from './room.js';
+import { buildProject, moduleList, addModule, fillWall, duplicateModule, removeModule, moveModule, setModuleProps, cabinetOf, moduleCount } from './project.js';
 import { orientLines, edgeNames, machiningRows } from './partinfo.js';
 import { autoFixAsync, kinProblems } from './autofix.js';
-import { MIN_DRAWER_H, FILL_LABELS, rulesOf, makePreset, normalize, fillItems, innerH, autoShelves, stepShelves, fitWidth, totalWidth, sectionOfMessage, moveItem, autoDrawers, packDrawers, redistribute, fitSections, clamp, asCell, MAX_CELL_DEPTH } from './rules.js';
+import { MIN_DRAWER_H, FILL_LABELS, rulesOf, makePreset, normalize, fillItems, innerH, autoShelves, stepShelves, fitWidth, totalWidth, sectionOfMessage, moveItem, autoDrawers, packDrawers, moveDivider, moveZoneSplit, redistribute, fitSections, clamp, asCell, MAX_CELL_DEPTH } from './rules.js';
+import { zonesOf } from './cells.js';
+import { TEMPLATES, libraryEntry, instantiate, MAX_LIBRARY } from './library.js';
 import { loadCatalog, saveCatalog, sanitizeCatalog, sheetFor, isTextured, DEFAULT_CATALOG, CATALOG_KEY, catalogHooks } from './catalog.js';
 import { loadProjects, saveProjects, newId, uniqueName, projectFile, parseProjectFile, hooks, PROJECTS_KEY, CURRENT_KEY, LEGACY_KEY, NAME_KEY } from './projects.js';
 import { putThumb, getThumb, getLocalThumb, delThumb, setRemote } from './thumbs.js';
@@ -798,17 +800,44 @@ function resetActive() {
   P = cabinetOf(root, active);
 }
 async function askAddModule() {
-  let type = 'wardrobe';
-  const body = el('div', 'dbody'), types = el('div', 'ptypes');
-  TYPES.forEach(([k, l]) => {
-    const b = el('button', 'ptype' + (k === type ? ' on' : '')); b.append(el('b', '', l), el('span', '', TYPE_INFO[k]));
-    b.onclick = () => { type = k; types.querySelectorAll('.ptype').forEach(x => x.classList.toggle('on', x === b)); };
-    types.append(b);
-  });
-  body.append(el('p', 'hint2', 'Новый корпус встанет справа от выбранного. Цвета возьмутся из текущего корпуса.'), types);
-  if (!(await modal('Добавить модуль', body, { ok: 'Добавить' }))) return;
-  act(() => { const i = addModule(root, makePreset(type, keepColorsOf()), { name: typeLabel(type), after: active, y: type === 'kwall' ? 1400 : 0, over: type === 'kwall' }); if (i >= 0) active = i; })();
+  let pick = { type: 'wardrobe' };
+  const body = el('div', 'dbody'), types = el('div', 'ptypes'), lib = el('div', 'ptypes');
+  const mark = () => body.querySelectorAll('.ptype').forEach(x => x.classList.toggle('on', x === pick.btn));
+  const card = (title, info, p) => { const b = el('button', 'ptype' + (p === pick ? ' on' : '')); b.append(el('b', '', title), el('span', '', info)); p.btn = b; b.onclick = () => { pick = p; mark(); }; return b; };
+  pick = { type: 'wardrobe' };
+  TYPES.forEach(([k, l]) => { const p = k === 'wardrobe' ? pick : { type: k }; types.append(card(l, TYPE_INFO[k], p)); });
+  body.append(el('p', 'hint2', 'Новый корпус встанет справа от выбранного. Цвета типов и типовых корпусов возьмутся из текущего корпуса.'), types);
+  body.append(el('h4', '', 'Типовые корпуса'));
+  for (const t of TEMPLATES) lib.append(card(t.name, t.hint, { template: t }));
+  body.append(lib);
+  const mine = cat.library || [];
+  if (mine.length) {
+    body.append(el('h4', '', 'Мои корпуса'));
+    const box = el('div', 'ptypes');
+    mine.forEach((e, i) => {
+      const b = card(e.name, `${typeLabel(e.P.type)}: ${e.P.height} × ${e.P.depth} мм, секций ${e.P.sections.length}`, { entry: e });
+      const del = el('span', 'x', '×'); del.title = 'Удалить из библиотеки'; del.setAttribute('role', 'button');
+      del.onclick = ev => { ev.stopPropagation(); cat.library.splice(i, 1); saveCatalog(cat); b.remove(); };
+      b.append(del); box.append(b);
+    });
+    body.append(box);
+  }
+  if (!(await modal('Добавить модуль', body, { ok: 'Добавить', wide: true }))) return;
+  act(() => {
+    let i;
+    if (pick.type) i = addModule(root, makePreset(pick.type, keepColorsOf()), { name: typeLabel(pick.type), after: active, y: pick.type === 'kwall' ? 1400 : 0, over: pick.type === 'kwall' });
+    else { const r = instantiate(pick.template || pick.entry, keepColorsOf()); i = addModule(root, r.P, { name: r.name, after: active, y: r.y, over: r.over }); }
+    if (i >= 0) active = i;
+  })();
   afterModuleChange(true);
+}
+async function saveToLibrary() {
+  if ((cat.library || []).length >= MAX_LIBRARY) { toast(`В библиотеке не больше ${MAX_LIBRARY} корпусов`); return; }
+  const name = await askText('Название корпуса в библиотеке', moduleList(root).find(m => m.i === active).name);
+  if (!name) return;
+  const e = libraryEntry(root, active, name);
+  (cat.library = cat.library || []).push(e); saveCatalog(cat);
+  toast(`Корпус «${name}» сохранён в библиотеку`);
 }
 async function editWorktop() {
   const cur = normalizeWorktop(root.countertop);
@@ -840,7 +869,7 @@ async function editWorktop() {
 }
 async function editRoom() {
   const cur = normalizeRoom(root.room);
-  let on = !!cur;
+  let on = !!cur, fill = false;
   const rm = JSON.parse(JSON.stringify(cur || ROOM_DEFAULT));
   const body = el('div', 'dbody wtbody');
   const num = (obj, key, min, max) => Object.assign(el('input'), { type: 'number', value: obj[key], min, max, step: 1, onchange() { const v = Math.round(+this.value); obj[key] = Number.isFinite(v) && this.value !== '' ? Math.max(min, Math.min(max, v)) : obj[key]; this.value = obj[key]; } });
@@ -852,6 +881,15 @@ async function editRoom() {
     body.append(head, el('p', 'hint2', 'Стена A — основная, вдоль неё стоит первый ряд. Стена B — перпендикулярная, у угловой кухни ряд встаёт в тот же угол. Проверки покажут выход за стены и потолок, шкафы в окне или двери и плинтус.'));
     if (!on) return;
     const r1 = el('div', 'wtrow'); r1.append(lab('Стена A, мм', num(rm, 'w', 500, 20000)), lab('Стена B, мм', num(rm, 'd', 500, 20000)), lab('Потолок, мм', num(rm, 'h', 1500, 5000)), lab('Отступ от угла, мм', num(rm, 'x', 0, 20000))); body.append(r1);
+    const ra = el('div', 'wtrow'); ra.append(el('b', '', 'Привязка ряда к стене A'));
+    const probe = { ...rm, openings: [] };
+    for (const [mode, label, hint] of [['start', 'В угол', 'Ряд начинается у угла или левого края стены'], ['center', 'По центру', 'Ряд по центру стены A (недоступно при угловом ряде)'], ['end', 'К правому краю', 'Ряд заканчивается у правого края стены A (недоступно при угловом ряде)']]) {
+      const b = el('button', '', label); b.title = hint; b.disabled = alignOffset(proj, probe, mode) === null;
+      b.onclick = () => { const v = alignOffset(proj, { ...rm, openings: [] }, mode); if (v !== null) { rm.x = v; draw(); } }; ra.append(b);
+    }
+    const fl = Object.assign(el('input'), { type: 'checkbox', checked: fill }), fb = el('label', 'wtrow'); fl.onchange = () => { fill = fl.checked; };
+    fb.append(fl, ' Закрыть остаток стены A фальшпанелью (при остатке от 20 до 600 мм)');
+    body.append(ra, fb);
     const r2 = el('div', 'wtrow'); r2.append(lab('Плинтус: высота, мм (0 — нет)', num(rm, 'skirt', 0, 300)), lab('Плинтус: толщина, мм', num(rm, 'skirtT', 5, 60))); body.append(r2);
     body.append(el('h4', '', 'Проёмы'));
     rm.openings.forEach((o, i) => {
@@ -868,6 +906,7 @@ async function editRoom() {
   draw();
   if (!(await modal('Помещение', body, { ok: 'Применить', wide: true }))) return;
   act(() => { if (on) root.room = rm; else delete root.room; })();
+  if (on && fill) { let res; act(() => { res = fillWall(root); })(); toast(res.ok ? `Фальшпанель ${res.width} мм закрыла остаток стены A` : `Фальшпанель не добавлена: ${res.reason}`); }
   drawModules(); render(true);
 }
 function drawModules() {
@@ -887,6 +926,7 @@ function drawModules() {
     wb.title = hasBase ? 'Столешница над нижними кухонными модулями: размеры, свесы, вырезы под мойку и варочную панель' : 'Нет нижних кухонных модулей: столешница появится, когда они будут добавлены';
     wb.onclick = editWorktop; strip.append(wb);
   }
+  const sb = el('button', 'modchip add', '☆ В библиотеку'); sb.title = 'Сохранить выбранный корпус в библиотеку: его можно будет добавить в любой проект'; sb.onclick = saveToLibrary; strip.append(sb);
   const rb = el('button', 'modchip' + (root.room ? ' on2' : ' add'), root.room ? 'Помещение ✓' : '+ Помещение');
   rb.title = 'Стены, потолок, окна и двери, плинтус: проверка размещения проекта и вид в 3D и на плане'; rb.onclick = editRoom; strip.append(rb);
   modsBox.append(strip);
@@ -1003,21 +1043,34 @@ const rayAt = e => {
 };
 const pickAt = e => rayAt(e).intersectObject(model, true).find(h => h.object.userData.section !== undefined || h.object.userData.part !== undefined);
 const moduleRoot = i => { let r = null; model.traverse(o => { if (o.userData.modRoot === i) r = o; }); return r || model; };
-const frontY = e => {
+const frontPt = e => {
   const m = spec.meta, k = 1 / 1000, mr = moduleRoot(active);
   mr.updateWorldMatrix(true, false);
   const n = new THREE.Vector3(0, 0, 1).transformDirection(mr.matrixWorld);
   const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(n, mr.localToWorld(new THREE.Vector3(0, 0, (m.D / 2) * k)));
   const pt = rayAt(e).ray.intersectPlane(plane, new THREE.Vector3());
-  return pt ? mr.worldToLocal(pt).y / k : null;
+  if (!pt) return null;
+  const v = mr.worldToLocal(pt);
+  return { x: v.x / k, y: v.y / k };
 };
+const frontY = e => { const v = frontPt(e); return v ? v.y : null; };
 let drag = null;
 const dragItem = d => P.sections[d.sec].items[d.i];
 const shelfOpts = alt => ({ t: P.thickness, ih: spec.meta.ih, step: alt ? 0 : 32 });
 stage.addEventListener('pointerdown', e => {
   if (e.button !== 0 || !selPartKey) return;
   const hit = pickAt(e), p = hit && hit.object.userData.part !== undefined ? spec.parts[hit.object.userData.part] : null;
-  if (!p || p.item === undefined || partIdOf(p) !== selPartKey || (hit.object.userData.mod || 0) !== active) return;
+  if (!p || partIdOf(p) !== selPartKey || (hit.object.userData.mod || 0) !== active) return;
+  const isDiv = p.name === 'Перегородка' && p.sec >= 1 && p.sec < P.sections.length;
+  const isHalf = p.name === 'Полуперегородка' && p.sec >= 1 && P.sections[p.sec - 1] && zonesOf(P.sections[p.sec - 1]).length === 1;
+  if (isDiv || isHalf) {
+    const pt = frontPt(e);
+    if (!pt) return;
+    drag = isDiv ? { kind: 'div', i: p.sec, x0: pt.x, base: P.sections[p.sec - 1].width, moved: false } : { kind: 'half', s: P.sections[p.sec - 1], x0: pt.x, base: P.sections[p.sec - 1].zone.split, moved: false };
+    stage._controls.enabled = false; beginEdit();
+    return;
+  }
+  if (p.item === undefined) return;
   const y0 = frontY(e);
   if (y0 === null) return;
   drag = { sec: p.sec - 1, i: p.item, y0, base: dragItem({ sec: p.sec - 1, i: p.item }).y, moved: false };
@@ -1025,6 +1078,14 @@ stage.addEventListener('pointerdown', e => {
 }, true);
 addEventListener('pointermove', e => {
   if (!drag) return;
+  if (drag.kind) {
+    const pt = frontPt(e); if (!pt) return;
+    const cur = drag.kind === 'div' ? P.sections[drag.i - 1].width : drag.s.zone.split;
+    const nv = drag.kind === 'div' ? moveDivider(P, drag.i, drag.base + (pt.x - drag.x0), { step: e.altKey ? 0 : 10 }) : moveZoneSplit(P, drag.s, drag.base + (pt.x - drag.x0), { step: e.altKey ? 0 : 10 });
+    if (nv === cur) return;
+    drag.moved = true; render(false);
+    return;
+  }
   const y = frontY(e); if (y === null) return;
   const it = dragItem(drag), nv = moveItem(P.sections[drag.sec], drag.i, drag.base + (y - drag.y0), shelfOpts(e.altKey));
   if (nv === it.y) return;

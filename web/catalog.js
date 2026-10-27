@@ -1,4 +1,5 @@
 // Справочники: декоры, листы, кромка, фурнитура, работы, параметры раскроя. Без DOM: работает и в node.
+import { sanitizeLibrary } from './library.js';
 export const CATALOG_KEY = 'mebel-catalog';
 /** Версия схемы справочника: при её росте в сохранённый справочник дописываются новые модели по умолчанию (по id). */
 export const CATALOG_VERSION = 2;
@@ -7,6 +8,7 @@ export const catalogHooks = { onSave: null };
 
 export const DEFAULT_CATALOG = {
   version: CATALOG_VERSION,
+  library: [], // свои корпуса: [{ name, P, over?, y? }] (web/library.js)
   decors: [
     { name: 'Белый', color: '#ecebe7', textured: false, price: 0 },
     { name: 'Бежевый', color: '#d9cdb8', textured: false, price: 0 },
@@ -122,6 +124,7 @@ export function sanitizeCatalog(c) {
   for (const k of ['edge', 'works', 'special', 'cut', 'milling']) if (!isObj(out[k])) out[k] = clone(DEFAULT_CATALOG[k]);
   if (!Array.isArray(out.cut.minOffcut) || out.cut.minOffcut.length < 2) out.cut.minOffcut = [...DEFAULT_CATALOG.cut.minOffcut];
   const num = (o, k, d) => { if (!Number.isFinite(+o[k]) || o[k] === '' || o[k] === null) o[k] = d; else o[k] = +o[k]; };
+  out.library = sanitizeLibrary(out.library);
   if (!Array.isArray(out.stock)) out.stock = [];
   out.stock = out.stock.filter(isObj);
   for (const s of out.stock) { if (typeof s.label !== 'string') s.label = 'ЛДСП Белый'; num(s, 'T', 18); num(s, 'L', 800); num(s, 'W', 600); num(s, 'qty', 1); s.qty = Math.max(0, Math.floor(s.qty)); }

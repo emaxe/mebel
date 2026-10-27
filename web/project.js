@@ -2,7 +2,8 @@
 // Модули стоят в ряд слева направо вплотную (плюс зазор gap), задние стенки на одной плоскости, подъём над полом y.
 import { buildSpec } from './model.js';
 import { normalize, MAX_MODULES } from './rules.js';
-import { roomFrame, roomWarnings } from './room.js';
+import { roomFrame, roomWarnings, rowExtent } from './room.js';
+import { makePreset } from './rules.js';
 import { normalizeWorktop, worktopParts, worktopWarnings } from './worktop.js';
 
 const clone = o => JSON.parse(JSON.stringify(o));
@@ -194,4 +195,22 @@ function buildLayout(root, { hwFor } = {}) {
     meta: { W: total, H, D: Dmax, yB: 0, yT: H, ih: H, sections: [], modules: mods.map(m => ({ i: m.i, name: m.name, x: m.x, y: m.y, z: m.z, rot: m.rot, run: m.run, W: m.W, H: m.H, D: m.D, meta: m.spec.meta })) },
   };
   return { mods, spec, multi: true, worktops, warnings: wtWarn };
+}
+
+/** Закрыть остаток стены A фальшпанелью: после последнего модуля ряда. Возвращает { ok, width } или { ok: false, reason }. Для ряда с углом справа не поддерживается. */
+export function fillWall(root) {
+  const room = root.room;
+  if (!room) return { ok: false, reason: 'помещение не задано' };
+  const proj = buildProject(root), f = proj.frame;
+  if (f.corner === 'R') return { ok: false, reason: 'ряд с углом справа: остаток слева закройте вручную' };
+  const row = proj.mods.filter(m => m.run === 0 && !m.over);
+  if (!row.length) return { ok: false, reason: 'нет модулей на полу вдоль стены A' };
+  const last = row.reduce((a, m) => (f.place(m).u1 > f.place(a).u1 ? m : a)), free = room.w - Math.max(rowExtent(proj, room).u1, f.place(last).u1);
+  if (free < 20) return { ok: false, reason: 'свободного места меньше 20 мм' };
+  if (free > 600) return { ok: false, reason: `остаток ${Math.round(free)} мм больше 600 мм: добавьте шкаф` };
+  const filler = makePreset('kfill', { frontName: last.P.frontName, frontColor: last.P.frontColor, frontT: last.P.frontT });
+  filler.height = last.P.type === 'kbase' || last.P.type === 'kcorner' ? last.P.height : filler.height;
+  filler.sections[0].width = Math.round(free);
+  const i = addModule(root, filler, { name: 'Фальшпанель', after: last.i });
+  return i < 0 ? { ok: false, reason: 'достигнут предел модулей' } : { ok: true, width: Math.round(free), index: i };
 }

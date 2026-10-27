@@ -305,6 +305,24 @@ export function moveItem(sec, i, y, { t, ih, step = 32, gap = 20 }) {
   return clamp(v, lo, hi);
 }
 
+/** Сдвиг перегородки между секциями i − 1 и i: левая секция получает ширину w (с привязкой к step), общая ширина не меняется. Возвращает ширину левой секции. */
+export function moveDivider(P, i, w, { step = 10 } = {}) {
+  const a = P.sections[i - 1], b = P.sections[i], [lo, hi] = rulesOf(P).secW, sum = a.width + b.width;
+  const min = Math.max(lo, sum - hi), max = Math.min(hi, sum - lo);
+  if (min > max) return a.width;
+  const v = clamp(step ? Math.round(w / step) * step : Math.round(w), min, max);
+  a.width = v; b.width = sum - v;
+  return v;
+}
+
+/** Сдвиг полуперегородки зоны секции: ширина левой колонки split в пределах 100 мм до стенок. */
+export function moveZoneSplit(P, s, split, { step = 10 } = {}) {
+  const z = s.zone;
+  if (!z) return 0;
+  z.split = clamp(step ? Math.round(split / step) * step : Math.round(split), 100, Math.max(100, s.width - P.thickness - 100));
+  return z.split;
+}
+
 export const totalWidth = P => P.sections.reduce((a, s) => a + s.width, 0) + (P.sections.length + 1) * P.thickness;
 
 export function fitWidth(P, W) {

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { makePreset, normalize, schemaOf } from '../web/rules.js';
-import { buildProject, addModule, moveModule, removeModule } from '../web/project.js';
-import { normalizeRoom, roomFrame, roomWarnings } from '../web/room.js';
+import { buildProject, addModule, moveModule, removeModule, fillWall } from '../web/project.js';
+import { normalizeRoom, roomFrame, roomWarnings, alignOffset, rowExtent } from '../web/room.js';
 import { planView } from '../web/plan.js';
 
 const kitchen = room => {
@@ -77,5 +77,42 @@ describe('помещение: план', () => {
   });
   it('без помещения план прежний', () => {
     expect(planView(buildProject(kitchen()))).not.toContain('data-room');
+  });
+});
+
+const row = room => { const r = makePreset('kbase'); r.sections[0].width = 600; addModule(r, makePreset('kbase'), { name: 'Нижний 2' }); r.room = room; return normalize(r); };
+
+describe('помещение: привязка ряда к стене', () => {
+  it('ряд без угла: в угол, по центру и к правому краю', () => {
+    const room = normalizeRoom(R({ w: 3000 })), proj = buildProject(row(room)), w = rowExtent(proj, room).width;
+    expect(alignOffset(proj, room, 'start')).toBe(0);
+    expect(alignOffset(proj, room, 'center')).toBe(Math.round((3000 - w) / 2));
+    expect(alignOffset(proj, room, 'end')).toBe(3000 - w);
+    const P = row(room); P.room.x = alignOffset(proj, room, 'end'); normalize(P);
+    const p2 = buildProject(P), ext = rowExtent(p2, P.room);
+    expect(ext.u1).toBeCloseTo(3000, 3);
+  });
+  it('угловой ряд стоит в углу: центр и правый край недоступны', () => {
+    const room = normalizeRoom(R()), proj = buildProject(kitchen(room));
+    expect(alignOffset(proj, room, 'start')).toBe(0);
+    expect(alignOffset(proj, room, 'center')).toBeNull(); expect(alignOffset(proj, room, 'end')).toBeNull();
+  });
+});
+
+describe('помещение: остаток стены фальшпанелью', () => {
+  it('добавляет фальшпанель ровно на остаток, предупреждений о стене нет', () => {
+    const P = row(normalizeRoom(R({ w: 1500 }))), before = buildProject(P), free = 1500 - rowExtent(before, P.room).u1;
+    const r = fillWall(P);
+    expect(r.ok).toBe(true); expect(r.width).toBe(Math.round(free));
+    const proj = buildProject(P), f = proj.mods[r.index];
+    expect(f.P.type).toBe('kfill'); expect(f.W).toBe(r.width);
+    expect(rowExtent(proj, P.room).u1).toBeCloseTo(1500, 0);
+    expect(proj.warnings.filter(w => /стен/.test(w))).toEqual([]);
+  });
+  it('отказывает, если остатка нет, он слишком велик или помещения нет', () => {
+    expect(fillWall(row(null)).ok).toBe(false);
+    expect(fillWall(row(normalizeRoom(R({ w: 5000 })))).reason).toMatch(/больше 600/);
+    const tight = row(normalizeRoom(R({ w: 1200 })));
+    expect(fillWall(tight).reason).toMatch(/меньше 20|больше/);
   });
 });
