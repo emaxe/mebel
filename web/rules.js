@@ -14,6 +14,7 @@ export const TYPE_RULES = {
   nightstand: { height: [400, 800], depth: [300, 550], secW: [300, 800], maxSec: 2, doors: ['none', 'left', 'right', 'flapDown'], items: ['shelf', 'fixed', 'glass', 'drawer', 'idrawer'], drawerFronts: 'overlay', fills: ['drawers2', 'drawers3', 'drawersShelf', 'idrawers', 'shelves', 'empty'] },
   dresser: { height: [600, 1300], depth: [350, 600], secW: [300, 1000], maxSec: 4, zone: true, doors: ['none', 'left', 'right', 'double'], items: ['shelf', 'fixed', 'drawer', 'idrawer'], drawerFronts: 'overlay', fills: ['drawers3', 'drawers4', 'drawers5', 'drawersShelf', 'idrawers', 'shelves', 'empty'] },
   kbase: { height: [500, 1000], depth: [300, 700], secW: [150, 1000], maxSec: 3, rails: true, doors: ['none', 'left', 'right', 'double'], items: ['shelf', 'fixed', 'glass', 'drawer', 'idrawer'], drawerFronts: 'overlay', fills: ['shelves1', 'shelves', 'drawers3', 'drawers2', 'drawersShelf', 'idrawers', 'empty'] },
+  kcorner: { height: [500, 1000], depth: [300, 700], secW: [600, 1500], maxSec: 1, doors: [], items: [], drawerFronts: 'inset', fills: ['empty'] },
   kfill: { height: [100, 2600], depth: [10, 40], secW: [20, 600], maxSec: 1, doors: [], items: [], drawerFronts: 'inset', fills: ['empty'] },
   kwall: { height: [300, 1000], depth: [200, 450], secW: [150, 1000], maxSec: 3, doors: ['none', 'left', 'right', 'double', 'flapUp'], items: ['shelf', 'fixed', 'glass'], drawerFronts: 'inset', fills: ['shelves1', 'shelves', 'empty'] },
   ktall: { height: [1800, 2600], depth: [400, 700], secW: [300, 800], maxSec: 2, doors: ['none', 'left', 'right', 'double'], items: ['shelf', 'fixed', 'glass', 'drawer', 'idrawer'], drawerFronts: 'overlay', fills: ['shelves', 'drawersShelves', 'drawers3', 'idrawers', 'empty'] },
@@ -45,6 +46,7 @@ export const PRESETS = {
   nightstand: { height: 550, depth: 420, base: 'legs', plinth: 100, topType: 'overlay', topOverhang: 15, handleOrient: 'h', sections: [sec(450, 'none', 'drawers2')] },
   dresser: { height: 850, depth: 450, base: 'plinth', plinth: 60, topType: 'overlay', topOverhang: 15, handleOrient: 'h', sections: [sec(500, 'none', 'drawers4'), sec(500, 'none', 'drawers4')] },
   kbase: { wallFix: true, plinthStrip: true, height: 820, depth: 560, base: 'legs', plinth: 100, topType: 'rails', backType: 'overlay', handleOrient: 'h', sections: [sec(600, 'double', 'shelves1')] },
+  kcorner: { wallFix: true, plinthStrip: true, height: 820, depth: 560, base: 'legs', plinth: 100, topType: 'inset', backType: 'overlay', wingB: 900, cornerSide: 'left', sections: [sec(900, 'none', 'empty')] },
   kfill: { height: 820, depth: 16, base: 'none', plinth: 0, topType: 'inset', backType: 'none', handle: 'none', sections: [sec(100, 'none', 'empty')] },
   kwall: { wallFix: true, height: 720, depth: 320, base: 'none', plinth: 0, topType: 'inset', backType: 'overlay', sections: [sec(600, 'double', 'shelves1')] },
   ktall: { wallFix: true, plinthStrip: true, height: 2200, depth: 560, base: 'legs', plinth: 100, topType: 'inset', backType: 'overlay', sections: [sec(600, 'double', 'shelves')] },
@@ -159,6 +161,7 @@ export function normalize(P) {
   }
   if (!P.plinthStrip || P.base !== 'legs') delete P.plinthStrip; else P.plinthStrip = true;
   P.shelfLoad = clamp(Number.isFinite(+P.shelfLoad) ? Math.round(+P.shelfLoad) : 80, 20, 250);
+  if (P.type === 'kcorner') { P.wingB = clamp(Number.isFinite(+P.wingB) ? Math.round(+P.wingB) : 900, 600, 1500); P.cornerSide = P.cornerSide === 'right' ? 'right' : 'left'; } else { delete P.wingB; delete P.cornerSide; }
   P.railW = clamp(Number.isFinite(+P.railW) ? Math.round(+P.railW) : 100, 60, 200);
   P.sections = (P.sections || []).slice(0, R.maxSec);
   if (!P.sections.length) P.sections = [newSection(P)];

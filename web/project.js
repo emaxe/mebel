@@ -171,6 +171,8 @@ export function buildProject(root, { hwFor } = {}) {
     for (const e of m.spec.hwx) { const key = `${e.name}|${e.stage}`, cur = hwx.get(key); if (cur) cur.qty += e.qty; else hwx.set(key, { ...e }); }
     for (const w of m.spec.warnings) warnings.push(`${m.name}: ${w}`);
   }
+  const cornerMod = mods.find(m => m.spec.meta.corner);
+  if (turn && cornerMod && cornerMod.P.cornerSide !== (turn === 'L' ? 'left' : 'right')) warnings.push(`${cornerMod.name}: угол ${cornerMod.P.cornerSide === 'right' ? 'справа' : 'слева'}, а второй ряд повёрнут ${turn === 'L' ? 'влево' : 'вправо'}: развернитесь в одну сторону`);
   const worktops = worktopParts(mods, wt);
   parts.push(...worktops);
   const wtWarn = worktopWarnings(worktops);

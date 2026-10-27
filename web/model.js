@@ -3,6 +3,7 @@
 // Faces: yz A=-x B=+x · xz A=top B=bottom · xy A=front B=back. Edges: w1 u=0, w2 u=L, d1 v=0, d2 v=W.
 import { addFronts } from './model-fronts.js';
 import { defaultHw } from './hwparams.js';
+import { buildCorner } from './model-corner.js';
 
 /** Порядок этапов сборки; asm у детали и у extra — ключ этапа. */
 export const STAGES = ['base', 'carcass', 'dividers', 'fixed', 'back', 'top', 'backOverlay', 'cornice', 'shelves', 'rods', 'drawerBox', 'drawers', 'doors', 'flaps', 'handles', 'kupe', 'final'];
@@ -40,6 +41,7 @@ function buildFiller(P) {
 
 export function buildSpec(P, opts = {}) {
   if (P.type === 'kfill') return buildFiller(P);
+  if (P.type === 'kcorner') return buildCorner(P, opts.hw || defaultHw(P));
   const hw_ = opts.hw || defaultHw(P), pin = hw_.pin;
   const S = P.sections, n = S.length, t = P.thickness, H = P.height, D = P.depth;
   const W = S.reduce((a, s) => a + s.width, 0) + (n + 1) * t;

@@ -29,21 +29,21 @@ export function worktopRuns(mods) {
   let cur = null, prev = null;
   for (const m of mods) {
     if (m.over) continue;
-    const base = (m.P.type === 'kbase' || m.P.type === 'kfill') && !m.y;
+    const base = (m.P.type === 'kbase' || m.P.type === 'kfill' || m.P.type === 'kcorner') && !m.y;
     if (!base) { cur = null; prev = m; continue; }
     const gapOk = cur && prev && prev === cur[cur.length - 1] && prev.run === m.run && m.s - (prev.s + prev.W) < SPLIT_GAP;
     if (gapOk) cur.push(m); else { cur = [m]; runs.push(cur); }
     prev = m;
   }
-  return runs.filter(r => r.some(m => m.P.type === 'kbase'));
+  return runs.filter(r => r.some(m => m.P.type === 'kbase' || m.P.type === 'kcorner'));
 }
 
 /** Детали-столешницы в координатах общей спецификации (mods — результат buildProject после раскладки). */
 export function worktopParts(mods, wt) {
   if (!wt) return [];
-  const parts = [], runs = worktopRuns(mods), frontEdge = {};
+  const parts = [], runs = worktopRuns(mods), frontEdge = {}, hasTurned = runs.some(r => r[0].run === 1), dEff = m => (m.spec.meta.corner ? m.spec.meta.corner.D : m.D);
   runs.forEach((run, ri) => {
-    const turned = run[0].run === 1, yTop = Math.max(...run.map(m => m.y + m.H)), depth = Math.max(...run.map(m => m.D)) + wt.front;
+    const turned = run[0].run === 1, yTop = Math.max(...run.map(m => m.y + m.H)), depth = Math.max(...run.map(dEff)) + wt.front;
     let c, L, W, cuts = [];
     if (!turned) {
       const left = Math.min(...run.map(m => m.x - m.W / 2)) - wt.side, right = Math.max(...run.map(m => m.x + m.W / 2)) + wt.side, zBack = Math.min(...run.map(m => m.z - m.D / 2));
@@ -70,6 +70,16 @@ export function worktopParts(mods, wt) {
     if (turned) p.notes.push('вторая столешница угловой кухни: стык с первой встык под 90°, стяжка столешничными стяжками');
     if (cuts.length) { p.cutouts = cuts.map(({ what, ...k }) => k); p.notes.push(...cuts.map(k => `вырез «${k.what}» ${Math.round(k.u1 - k.u0)}×${Math.round(k.v1 - k.v0)} мм`)); }
     parts.push(p);
+    // угловой модуль без второго ряда: крыло B закрывает вторая плита встык с первой
+    const cm = !turned && !hasTurned ? run.find(m => m.spec.meta.corner) : null;
+    if (cm) {
+      const B = cm.D, left = cm.P.cornerSide !== 'right', wallX = left ? cm.x - cm.W / 2 : cm.x + cm.W / 2, zBack = cm.z - cm.D / 2, zStart = zBack + depth, zEnd = zBack + B;
+      if (zEnd - zStart >= 20) {
+        const q = { ...p, L: depth, W: zEnd - zStart, c: [left ? wallX + depth / 2 : wallX - depth / 2, yTop + wt.T / 2, (zStart + zEnd) / 2], notes: [...p.notes.filter(n => !/вырез/.test(n)), 'крыло B углового модуля: стык с первой столешницей встык под 90°, стяжка столешничными стяжками'] };
+        delete q.cutouts;
+        parts.push(q);
+      }
+    }
   });
   return parts;
 }
