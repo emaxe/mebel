@@ -42,7 +42,7 @@ export function renderProduction({ P, cat, projName, preview = null, shareToken 
     : checkBuild(spec, P, { N, hw: HW });
   const SHOP = shoppingList(spec, cat, P);
   const cur = cat.currency || '₽', rub = v => v.toLocaleString('ru-RU', { maximumFractionDigits: 0 }) + ' ' + cur;
-  const W = Math.round(spec.meta.W), TYPES = { kbase: 'Нижний кухонный модуль', kwall: 'Верхний кухонный модуль', ktall: 'Кухонный пенал', wardrobe: 'Шкаф', rack: 'Стеллаж', nightstand: 'Тумба прикроватная', dresser: 'Комод', tv: 'ТВ-тумба' };
+  const W = Math.round(spec.meta.W), TYPES = { kfill: 'Фальшпанель', kbase: 'Нижний кухонный модуль', kwall: 'Верхний кухонный модуль', ktall: 'Кухонный пенал', wardrobe: 'Шкаф', rack: 'Стеллаж', nightstand: 'Тумба прикроватная', dresser: 'Комод', tv: 'ТВ-тумба' };
   const title = multi ? `Проект из ${mods.length} модулей ${W}×${Math.round(spec.meta.H)}×${Math.round(spec.meta.D)} мм` : `${TYPES[P.type] || 'Изделие'} ${W}×${P.height}×${P.depth} мм`;
   const safeUrl = u => safeUrlOf(u, baseHref);
   const fmt = v => String(v).replace('.', ',');

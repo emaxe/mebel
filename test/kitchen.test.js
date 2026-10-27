@@ -109,3 +109,19 @@ describe('цокольная планка', () => {
     expect(nest(groupParts(spec)).over).toEqual([]);
   });
 });
+
+describe('узкие фасады с рамкой', () => {
+  it('окно под стекло не получает отрицательный размер: стекло не создаётся, есть предупреждение и ошибка рамки', () => {
+    const P = makePreset('kwall'); P.sections[0].width = 150; P.sections[0].door = 'double'; P.sections[0].frontStyle = 'glass'; normalize(P);
+    const spec = buildSpec(P);
+    expect(spec.warnings.some(w => /слишком мал для окна под стекло/.test(w))).toBe(true);
+    expect(spec.parts.some(p => p.name === 'Стекло фасада')).toBe(false);
+    expect(spec.parts.every(p => Number.isFinite(p.L) && p.L > 0 && p.W > 0)).toBe(true);
+    expect(checkBuild(spec, P, { skipKin: true }).some(f => f.code === 'frame')).toBe(true);
+  });
+  it('нормальный фасад под стекло не меняется', () => {
+    const P = makePreset('kwall'); P.sections[0].door = 'double'; P.sections[0].frontStyle = 'glass'; normalize(P);
+    const spec = buildSpec(P);
+    expect(spec.parts.some(p => p.name === 'Стекло фасада')).toBe(true); expect(spec.warnings.some(w => /слишком мал/.test(w))).toBe(false);
+  });
+});

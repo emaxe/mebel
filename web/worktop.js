@@ -29,13 +29,13 @@ export function worktopRuns(mods) {
   let cur = null, prev = null;
   for (const m of mods) {
     if (m.over) continue;
-    const base = m.P.type === 'kbase' && !m.y;
+    const base = (m.P.type === 'kbase' || m.P.type === 'kfill') && !m.y;
     if (!base) { cur = null; prev = m; continue; }
     const gapOk = cur && prev && prev === cur[cur.length - 1] && prev.run === m.run && m.s - (prev.s + prev.W) < SPLIT_GAP;
     if (gapOk) cur.push(m); else { cur = [m]; runs.push(cur); }
     prev = m;
   }
-  return runs;
+  return runs.filter(r => r.some(m => m.P.type === 'kbase'));
 }
 
 /** Детали-столешницы в координатах общей спецификации (mods — результат buildProject после раскладки). */

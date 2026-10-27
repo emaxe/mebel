@@ -30,7 +30,16 @@ export function presetItems(kind, ih, P) {
 }
 
 /** opts.hw — параметры фурнитуры выбранных моделей (resolveHw); без них берутся значения по умолчанию. */
+/** Фальшпанель: плоская панель из фасадного материала шириной в секцию; крепится к соседнему корпусу. */
+function buildFiller(P) {
+  const w = P.sections[0].width, H = P.height, T = P.frontT, label = `ЛДСП ${P.frontName}`, e = P.edgeFront;
+  const panel = { kind: 'panel', mat: 'front', label, T, holes: [], grooves: [], notes: ['фальшпанель: крепится к боковине соседнего корпуса саморезами 4×30 изнутри или на мебельных уголках'], sec: 1, asm: 'final', name: 'Фальшпанель', plane: 'xy', L: w, W: H, c: [0, H / 2, 0], edges: { d1: e, d2: e, w1: e, w2: e } };
+  const hw = [['Саморез 4×30 (фальшпанель)', 4]];
+  return { parts: [panel], extras: [], hwx: hw.map(([name, qty]) => ({ kind: 'screw', name, qty, stage: 'final' })), hw, warnings: [], meta: { W: w, H, D: T, yB: 0, yT: H, ih: H, sections: [{ x: 0, w, sec: 0 }] } };
+}
+
 export function buildSpec(P, opts = {}) {
+  if (P.type === 'kfill') return buildFiller(P);
   const hw_ = opts.hw || defaultHw(P), pin = hw_.pin;
   const S = P.sections, n = S.length, t = P.thickness, H = P.height, D = P.depth;
   const W = S.reduce((a, s) => a + s.width, 0) + (n + 1) * t;

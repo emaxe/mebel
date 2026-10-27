@@ -27,7 +27,7 @@ let cat = loadCatalog();
 const woods = () => cat.decors.map(d => [d.name, d.color]);
 const METAL = [['Хром', '#c8ccd0'], ['Латунь', '#c9a25a'], ['Чёрный', '#2a2a2a']];
 const STYLES = [['flat', 'Гладкий'], ['shaker', 'Рамочный'], ['mirror', 'Зеркало'], ['glass', 'Стекло']];
-const TYPES = [['wardrobe', 'Шкаф'], ['rack', 'Стеллаж'], ['nightstand', 'Тумба'], ['dresser', 'Комод'], ['tv', 'ТВ-тумба'], ['kbase', 'Кухня: нижний модуль'], ['kwall', 'Кухня: верхний модуль'], ['ktall', 'Кухня: пенал']];
+const TYPES = [['wardrobe', 'Шкаф'], ['rack', 'Стеллаж'], ['nightstand', 'Тумба'], ['dresser', 'Комод'], ['tv', 'ТВ-тумба'], ['kbase', 'Кухня: нижний модуль'], ['kwall', 'Кухня: верхний модуль'], ['kfill', 'Кухня: фальшпанель'], ['ktall', 'Кухня: пенал']];
 
 // ── проекты: список в localStorage, текущий дублируется в 'mebel-v3' для production.html
 let { db, cur } = loadProjects();
@@ -1030,7 +1030,7 @@ const info = (title, text) => { const b = el('div', 'dbody'); b.append(el('p', '
 
 // ── проекты
 const typeLabel = k => (TYPES.find(t => t[0] === k) || ['', ''])[1];
-const TYPE_INFO = { kbase: 'Нижний модуль на ножках: царги вместо крышки, полки или ящики, дверь', kwall: 'Навесной шкаф: неглубокий корпус на стену, дверь или подъёмный фасад', ktall: 'Пенал до потолка: полки и ящики, дверь', wardrobe: 'Штанги, полки, ящики; распашные двери или купе', rack: 'Открытые полки без дверей', nightstand: 'Невысокая тумба: ящики, полки, дверь', dresser: 'Широкая стопка ящиков', tv: 'Низкая и широкая, с нишами и ящиками' };
+const TYPE_INFO = { kfill: 'Доборная панель шириной от 20 мм: закрывает щель у стены или между корпусами', kbase: 'Нижний модуль на ножках: царги вместо крышки, полки или ящики, дверь', kwall: 'Навесной шкаф: неглубокий корпус на стену, дверь или подъёмный фасад', ktall: 'Пенал до потолка: полки и ящики, дверь', wardrobe: 'Штанги, полки, ящики; распашные двери или купе', rack: 'Открытые полки без дверей', nightstand: 'Невысокая тумба: ящики, полки, дверь', dresser: 'Широкая стопка ящиков', tv: 'Низкая и широкая, с нишами и ящиками' };
 const projDlg = document.getElementById('projDlg'), pm = document.getElementById('pm'), xm = document.getElementById('xm'), am = document.getElementById('am');
 const keepColors = () => ({ bodyColor: P.bodyColor, bodyName: P.bodyName, frontColor: P.frontColor, frontName: P.frontName, metalColor: P.metalColor });
 function drawHeader() {

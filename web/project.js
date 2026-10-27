@@ -150,6 +150,14 @@ export function buildProject(root, { hwFor } = {}) {
     else if (turn === 'R') { m.x = totalA - m.D / 2; m.z = DA + m.s + m.W / 2; m.rot = -Math.PI / 2; }
     else { m.x = m.D / 2; m.z = DA + m.s + m.W / 2; m.rot = Math.PI / 2; }
   }
+  // фальшпанель стоит лицом вровень с фасадами ряда, остальные корпуса — спиной к стене
+  const runD = [0, 1].map(r => Math.max(0, ...mods.filter(m => m.run === r && m.P.type !== 'kfill').map(m => m.D)));
+  for (const m of mods) {
+    if (m.P.type !== 'kfill' || !runD[m.run]) continue;
+    if (m.run === 0) m.z = runD[0] - m.D / 2;
+    else if (turn === 'R') m.x = totalA - runD[1] + m.D / 2;
+    else m.x = runD[1] - m.D / 2;
+  }
   const ext = m => (m.run === 0 ? [m.x - m.W / 2, m.x + m.W / 2, m.z - m.D / 2, m.z + m.D / 2] : [m.x - m.D / 2, m.x + m.D / 2, m.z - m.W / 2, m.z + m.W / 2]);
   const boxes = mods.map(ext), minX = Math.min(...boxes.map(b => b[0])), maxX = Math.max(...boxes.map(b => b[1])), minZ = Math.min(...boxes.map(b => b[2])), maxZ = Math.max(...boxes.map(b => b[3]));
   const total = maxX - minX, Dmax = maxZ - minZ;

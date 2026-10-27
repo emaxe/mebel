@@ -33,6 +33,7 @@ const isFace = h => h.f === 'A' || h.f === 'B';
 
 export function checkBuild(spec, P, opts = {}) {
   const out = [];
+  if (P.type === 'kfill') return out;
   const add = (level, code, text, parts = []) => out.push({ level, code, text, parts: parts.map(p => (typeof p === 'string' ? p : nm(p))) });
   const parts = spec.parts, extras = spec.extras, HW = opts.hw || defaultHw(P);
   const idx = new Map(parts.map((p, i) => [p, i]));

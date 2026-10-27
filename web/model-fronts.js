@@ -102,7 +102,9 @@ export function addFronts(ctx) {
       p.notes.push(`фрезеровка под стекло, рамка ${mm.frameW} мм`, 'МДФ: кромка не нужна, торцы красятся или обтягиваются плёнкой');
       p.mill = { kind: 'glass', face: 'B', frameW: mm.frameW, window: win, rebate: [win[0] + 2 * mm.glassOverlap, win[1] + 2 * mm.glassOverlap], rebateDepth: mm.rebateDepth, cornerR: mm.cornerR };
       const ge = (mm.glassChamfer ? `, фаска ${mm.glassChamfer}×45°` : '') + (mm.glassCornerR ? `, углы R${mm.glassCornerR}` : '');
-      part({ name: 'Стекло фасада', mat: 'glass', label: 'Стекло матовое', T: 4, plane: 'xy', L: w - 2 * (mm.frameW - mm.glassOverlap), W: h - 2 * (mm.frameW - mm.glassOverlap), c: [cx, cy, z - fT / 2 + 4], sec, group, notes: ['вставка в фасад, кромка шлифованная' + ge] });
+      const gw = w - 2 * (mm.frameW - mm.glassOverlap), gh = h - 2 * (mm.frameW - mm.glassOverlap);
+      if (gw < 10 || gh < 10) warnings.push(`Секция ${sec}: фасад ${Math.round(w)}×${Math.round(h)} мм слишком мал для окна под стекло, стекло не создано`);
+      else part({ name: 'Стекло фасада', mat: 'glass', label: 'Стекло матовое', T: 4, plane: 'xy', L: gw, W: gh, c: [cx, cy, z - fT / 2 + 4], sec, group, notes: ['вставка в фасад, кромка шлифованная' + ge] });
     }
     if (style === 'mirror') {
       if (w - 120 >= 30 && h - 120 >= 30) part({ name: 'Зеркало', mat: 'mirror', label: 'Зеркало', T: 4, plane: 'xy', L: w - 120, W: h - 120, c: [cx, cy, z + fT / 2 + 2], sec, group, notes: ['клеится на фасад, кромка шлифованная'] });
