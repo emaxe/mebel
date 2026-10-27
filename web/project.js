@@ -15,15 +15,15 @@ export const cabinetOf = (root, i) => (i === 0 ? root : root.modules[i - 1].P);
 
 /** Сводка по модулям: [{ i, name, gap, y, P }]. Для основного корпуса P — сам проект (изменения видны сразу). */
 export function moduleList(root) {
-  const list = [{ i: 0, name: root.modName || 'Корпус 1', gap: 0, y: root.modY || 0, over: false, P: root }];
-  (root.modules || []).forEach((m, k) => list.push({ i: k + 1, name: m.name, gap: m.gap || 0, y: m.y || 0, over: !!m.over, P: m.P }));
+  const list = [{ i: 0, name: root.modName || 'Корпус 1', gap: 0, y: root.modY || 0, over: false, turn: '', P: root }];
+  (root.modules || []).forEach((m, k) => list.push({ i: k + 1, name: m.name, gap: m.gap || 0, y: m.y || 0, over: !!m.over, turn: m.turn || '', P: m.P }));
   return list;
 }
 
 const detach = P => { const c = { ...P }; for (const k of PRIMARY_KEYS) delete c[k]; return c; };
 
 /** Развернуть проект в независимые записи: [{ name, gap, y, P }] (основной корпус отделяется от проекта). */
-const toItems = root => moduleList(root).map(m => ({ name: m.name, gap: m.gap, y: m.y, over: m.over, P: m.i === 0 ? detach(root) : m.P }));
+const toItems = root => moduleList(root).map(m => ({ name: m.name, gap: m.gap, y: m.y, over: m.over, turn: m.turn, P: m.i === 0 ? detach(root) : m.P }));
 
 /** Собрать проект обратно из записей: первая становится основным корпусом, остальные — модулями. root меняется на месте. */
 function fromItems(root, items) {
@@ -31,17 +31,17 @@ function fromItems(root, items) {
   for (const k of Object.keys(root)) delete root[k];
   Object.assign(root, first.P);
   root.modName = first.name; if (first.y) root.modY = first.y;
-  if (rest.length) root.modules = rest.map(m => ({ name: m.name, gap: m.gap, y: m.y, ...(m.over ? { over: true } : {}), P: m.P }));
+  if (rest.length) root.modules = rest.map(m => ({ name: m.name, gap: m.gap, y: m.y, ...(m.over ? { over: true } : {}), ...(m.turn ? { turn: m.turn } : {}), P: m.P }));
   return normalize(root);
 }
 
 const uniqueName = (items, base) => { const used = new Set(items.map(m => m.name)); if (!used.has(base)) return base; let n = 2; while (used.has(`${base} ${n}`)) n++; return `${base} ${n}`; };
 
 /** Добавить модуль после модуля `after` (по умолчанию в конец). Возвращает индекс нового модуля или -1, если достигнут предел. */
-export function addModule(root, P, { name = 'Модуль', gap = 0, y = 0, over = false, after = moduleCount(root) - 1 } = {}) {
+export function addModule(root, P, { name = 'Модуль', gap = 0, y = 0, over = false, turn = '', after = moduleCount(root) - 1 } = {}) {
   if (moduleCount(root) >= MAX_MODULES) return -1;
   const items = toItems(root), at = Math.max(0, Math.min(after, items.length - 1)) + 1;
-  items.splice(at, 0, { name: uniqueName(items, name), gap, y, over, P: clone(P) });
+  items.splice(at, 0, { name: uniqueName(items, name), gap, y, over, turn, P: clone(P) });
   fromItems(root, items);
   return at;
 }
@@ -49,7 +49,7 @@ export function addModule(root, P, { name = 'Модуль', gap = 0, y = 0, over
 export function duplicateModule(root, i) {
   const items = toItems(root), src = items[i];
   if (!src || items.length >= MAX_MODULES) return -1;
-  items.splice(i + 1, 0, { name: uniqueName(items, `${src.name} (копия)`), gap: src.gap, y: src.y, over: src.over, P: clone(src.P) });
+  items.splice(i + 1, 0, { name: uniqueName(items, `${src.name} (копия)`), gap: src.gap, y: src.y, over: src.over, turn: src.turn, P: clone(src.P) });
   fromItems(root, items);
   return i + 1;
 }
@@ -68,13 +68,13 @@ export function moveModule(root, i, dir) {
   const items = toItems(root), j = i + dir;
   if (j < 0 || j >= items.length) return i;
   [items[i], items[j]] = [items[j], items[i]];
-  items[0].gap = 0; items[0].over = false;
+  items[0].gap = 0; items[0].over = false; items[0].turn = '';
   fromItems(root, items);
   return j;
 }
 
 /** Переименовать, сменить зазор или подъём модуля. */
-export function setModuleProps(root, i, { name, gap, y, over }) {
+export function setModuleProps(root, i, { name, gap, y, over, turn }) {
   if (i === 0) {
     if (name !== undefined) root.modName = name;
     if (y !== undefined) root.modY = y;
@@ -84,6 +84,7 @@ export function setModuleProps(root, i, { name, gap, y, over }) {
     if (gap !== undefined) m.gap = gap;
     if (y !== undefined) m.y = y;
     if (over !== undefined) m.over = !!over;
+    if (turn !== undefined) { if (turn) m.turn = turn; else delete m.turn; }
   }
   normalize(root);
 }
@@ -127,20 +128,32 @@ export function buildProject(root, { hwFor } = {}) {
   const mods = list.map(m => ({ ...m, spec: buildSpec(m.P, hwFor ? { hw: hwFor(m.P) } : {}) }));
   const wt = normalizeWorktop(root.countertop);
   if (mods.length === 1) {
-    const m = { ...mods[0], x: 0, y: 0, z: 0, left: 0, W: mods[0].spec.meta.W, H: mods[0].spec.meta.H, D: mods[0].spec.meta.D };
+    const m = { ...mods[0], x: 0, y: 0, z: 0, rot: 0, run: 0, s: 0, left: 0, W: mods[0].spec.meta.W, H: mods[0].spec.meta.H, D: mods[0].spec.meta.D };
     const worktops = worktopParts([m], wt);
     const warnings = worktopWarnings(worktops);
     return { mods: [m], spec: worktops.length ? { ...m.spec, parts: [...m.spec.parts, ...worktops], warnings: [...m.spec.warnings, ...warnings] } : m.spec, multi: false, worktops, warnings };
   }
 
-  let cursor = 0, prevLeft = 0;
+  // раскладка: основной ряд вдоль стены A; модуль с turn начинает второй ряд вдоль соседней стены (угол справа или слева)
+  let cursor = 0, prevS = 0, run = 0, turn = '';
   mods.forEach((m, k) => {
     m.W = m.spec.meta.W; m.H = m.spec.meta.H; m.D = m.spec.meta.D;
-    m.left = k && m.over ? prevLeft + m.gap : cursor + (k ? m.gap : 0);
-    cursor = Math.max(cursor, m.left + m.W); prevLeft = m.left;
+    if (k > 0 && !m.over && m.turn && !turn) { turn = m.turn; run = 1; cursor = 0; prevS = 0; }
+    m.run = run;
+    m.s = k && m.over ? prevS + m.gap : cursor + (k ? m.gap : 0);
+    m.left = m.s;
+    cursor = Math.max(cursor, m.s + m.W); prevS = m.s;
   });
-  const total = cursor, Dmax = Math.max(...mods.map(m => m.D));
-  for (const m of mods) { m.x = m.left + m.W / 2 - total / 2; m.z = (m.D - Dmax) / 2; }
+  const runA = mods.filter(m => m.run === 0), totalA = Math.max(...runA.map(m => m.s + m.W)), DA = Math.max(...runA.map(m => m.D));
+  for (const m of mods) {
+    if (m.run === 0) { m.x = m.s + m.W / 2; m.z = m.D / 2; m.rot = 0; }
+    else if (turn === 'R') { m.x = totalA - m.D / 2; m.z = DA + m.s + m.W / 2; m.rot = -Math.PI / 2; }
+    else { m.x = m.D / 2; m.z = DA + m.s + m.W / 2; m.rot = Math.PI / 2; }
+  }
+  const ext = m => (m.run === 0 ? [m.x - m.W / 2, m.x + m.W / 2, m.z - m.D / 2, m.z + m.D / 2] : [m.x - m.D / 2, m.x + m.D / 2, m.z - m.W / 2, m.z + m.W / 2]);
+  const boxes = mods.map(ext), minX = Math.min(...boxes.map(b => b[0])), maxX = Math.max(...boxes.map(b => b[1])), minZ = Math.min(...boxes.map(b => b[2])), maxZ = Math.max(...boxes.map(b => b[3]));
+  const total = maxX - minX, Dmax = maxZ - minZ;
+  for (const m of mods) { m.x -= (minX + maxX) / 2; m.z -= (minZ + maxZ) / 2; }
 
   const parts = [], extras = [], hw = new Map(), hwx = new Map(), warnings = [];
   for (const m of mods) {
@@ -157,7 +170,7 @@ export function buildProject(root, { hwFor } = {}) {
   const H = Math.max(...mods.map(m => m.y + m.H));
   const spec = {
     parts, extras, hwx: [...hwx.values()], hw: [...hw.entries()], warnings,
-    meta: { W: total, H, D: Dmax, yB: 0, yT: H, ih: H, sections: [], modules: mods.map(m => ({ i: m.i, name: m.name, x: m.x, y: m.y, z: m.z, W: m.W, H: m.H, D: m.D, meta: m.spec.meta })) },
+    meta: { W: total, H, D: Dmax, yB: 0, yT: H, ih: H, sections: [], modules: mods.map(m => ({ i: m.i, name: m.name, x: m.x, y: m.y, z: m.z, rot: m.rot, run: m.run, W: m.W, H: m.H, D: m.D, meta: m.spec.meta })) },
   };
   return { mods, spec, multi: true, worktops, warnings: wtWarn };
 }

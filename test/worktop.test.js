@@ -143,3 +143,40 @@ describe('предупреждения по столешнице', () => {
   });
   it('без столешницы предупреждений нет', () => { expect(worktopWarnings([])).toEqual([]); });
 });
+
+describe('столешница угловой кухни', () => {
+  const lk = turn => { const r = makePreset('kbase'); addModule(r, makePreset('kbase'), {}); addModule(r, makePreset('kbase'), { name: 'У1', turn }); addModule(r, makePreset('kbase'), { name: 'У2' }); r.countertop = { T: 38, front: 30, side: 0, cutouts: [] }; return normalize(r); };
+  const tops2 = pr => pr.spec.parts.filter(p => p.name === 'Столешница');
+  const foot = p => [p.c[0] - p.L / 2, p.c[0] + p.L / 2, p.c[2] - p.W / 2, p.c[2] + p.W / 2];
+  const hit = (a, b) => a[0] < b[1] - 1e-6 && b[0] < a[1] - 1e-6 && a[2] < b[3] - 1e-6 && b[2] < a[3] - 1e-6;
+  for (const turn of ['R', 'L']) {
+    it(`поворот ${turn}: две столешницы, не накладываются, стык встык`, () => {
+      const pr = buildProject(lk(turn)), [a, b] = tops2(pr);
+      expect(tops2(pr).length).toBe(2);
+      expect(hit(foot(a), foot(b))).toBe(false);
+      expect(b.c[2] - b.W / 2).toBeCloseTo(a.c[2] + a.W / 2, 6);
+    });
+    it(`поворот ${turn}: вторая столешница вдоль соседней стены на высоте корпусов`, () => {
+      const pr = buildProject(lk(turn)), [a, b] = tops2(pr), runB = pr.mods.filter(m => m.run === 1);
+      const Dmax = Math.max(...runB.map(m => m.D));
+      expect(b.L).toBeCloseTo(Dmax + 30, 6);
+      expect(b.W).toBeCloseTo(Math.max(...runB.map(m => m.z + m.W / 2)) - (a.c[2] + a.W / 2), 6);
+      expect(b.c[1]).toBeCloseTo(a.c[1], 6);
+      const wall = turn === 'R' ? Math.max(...runB.map(m => m.x + m.D / 2)) : Math.min(...runB.map(m => m.x - m.D / 2));
+      expect(turn === 'R' ? b.c[0] + b.L / 2 : b.c[0] - b.L / 2).toBeCloseTo(wall, 6);
+    });
+  }
+  it('общая смета и документы учитывают обе столешницы', () => {
+    const pr = buildProject(lk('R')), G = groupParts(pr.spec), cat = clone(DEFAULT_CATALOG);
+    expect(G.filter(g => g.mat === 'top').reduce((a, g) => a + g.qty, 0)).toBe(2);
+    const est = estimate(pr.spec, G, nest(G), edgeSummary(G), cat, pr.mods[0].P);
+    const wl = est.sections.flatMap(s => s.lines).filter(l => /Столешница/.test(l.name));
+    expect(wl.reduce((a, l) => a + l.qty, 0)).toBeCloseTo(G.filter(g => g.mat === 'top').reduce((a, g) => a + g.L * g.qty, 0) / 1000, 1);
+  });
+  it('3D: второй ряд повёрнут, столешница нет', () => {
+    const r = lk('R'), pr = buildProject(r), grp = build3DProject(THREE, pr, r);
+    const rots = grp.children.filter(c => c.userData.modRoot !== undefined).map(c => c.rotation.y);
+    expect(rots.length).toBe(4);
+    expect(rots.slice(0, 2).every(v => v === 0)).toBe(true); expect(rots.slice(2).every(v => Math.abs(v + Math.PI / 2) < 1e-9)).toBe(true);
+  });
+});

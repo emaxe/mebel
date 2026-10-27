@@ -261,3 +261,57 @@ describe('модуль над предыдущим', () => {
     expect(moduleList(r)[1].over).toBe(true);
   });
 });
+
+describe('угловая раскладка (второй ряд вдоль соседней стены)', () => {
+  const rect = m => (m.run === 0 ? [m.x - m.W / 2, m.x + m.W / 2, m.z - m.D / 2, m.z + m.D / 2] : [m.x - m.D / 2, m.x + m.D / 2, m.z - m.W / 2, m.z + m.W / 2]);
+  const hit = (a, b) => a[0] < b[1] - 1e-6 && b[0] < a[1] - 1e-6 && a[2] < b[3] - 1e-6 && b[2] < a[3] - 1e-6;
+  const lkitchen = (turn, extra = {}) => { const r = makePreset('kbase'); addModule(r, makePreset('kbase'), { name: 'Низ 2' }); addModule(r, makePreset('kbase'), { name: 'Угол 1', turn }); addModule(r, makePreset('kbase'), { name: 'Угол 2', ...extra }); return r; };
+  for (const turn of ['R', 'L']) {
+    it(`поворот ${turn}: модули второго ряда повёрнуты на 90° и не пересекаются с первым`, () => {
+      const pr = buildProject(lkitchen(turn)), [a, b, c, d] = pr.mods;
+      expect([a.run, b.run, c.run, d.run]).toEqual([0, 0, 1, 1]);
+      expect(c.rot).toBeCloseTo(turn === 'R' ? -Math.PI / 2 : Math.PI / 2, 9);
+      for (let i = 0; i < 4; i++) for (let j = i + 1; j < 4; j++) expect(hit(rect(pr.mods[i]), rect(pr.mods[j])), `${i}-${j}`).toBe(false);
+    });
+    it(`поворот ${turn}: второй ряд примыкает к торцу первого, задние стенки на стене`, () => {
+      const pr = buildProject(lkitchen(turn)), [a, b, c, d] = pr.mods, A = [a, b];
+      const aMinX = Math.min(...A.map(m => m.x - m.W / 2)), aMaxX = Math.max(...A.map(m => m.x + m.W / 2)), aFront = Math.max(...A.map(m => m.z + m.D / 2));
+      const wall = turn === 'R' ? aMaxX : aMinX;
+      for (const m of [c, d]) { expect(turn === 'R' ? m.x + m.D / 2 : m.x - m.D / 2).toBeCloseTo(wall, 6); expect(m.z - m.W / 2).toBeGreaterThanOrEqual(aFront - 1e-6); }
+      expect(c.z - c.W / 2).toBeCloseTo(aFront, 6);
+      expect(d.z - d.W / 2).toBeCloseTo(c.z + c.W / 2, 6);
+    });
+  }
+  it('габариты проекта — охватывающий прямоугольник, центр в нуле', () => {
+    const pr = buildProject(lkitchen('R')), boxes = pr.mods.map(rect);
+    const x0 = Math.min(...boxes.map(b => b[0])), x1 = Math.max(...boxes.map(b => b[1])), z0 = Math.min(...boxes.map(b => b[2])), z1 = Math.max(...boxes.map(b => b[3]));
+    expect(pr.spec.meta.W).toBeCloseTo(x1 - x0, 6); expect(pr.spec.meta.D).toBeCloseTo(z1 - z0, 6);
+    expect((x0 + x1) / 2).toBeCloseTo(0, 6); expect((z0 + z1) / 2).toBeCloseTo(0, 6);
+    expect(pr.spec.meta.D).toBeGreaterThan(pr.mods[0].D);
+  });
+  it('без угла раскладка прежняя (один ряд), поворота нет', () => {
+    const pr = buildProject(two());
+    expect(pr.mods.every(m => m.run === 0 && m.rot === 0)).toBe(true);
+  });
+  it('верхний модуль над модулем второго ряда поворачивается вместе с ним', () => {
+    const r = lkitchen('R'); addModule(r, makePreset('kwall'), { name: 'Верх 2', y: 1400, over: true, after: 3 });
+    const pr = buildProject(r), w = pr.mods.find(m => m.name === 'Верх 2'), c = pr.mods.find(m => m.name === 'Угол 2');
+    expect(w.run).toBe(1); expect(w.rot).toBeCloseTo(c.rot, 9); expect(Math.abs(w.z - c.z) <= c.W).toBe(true);
+  });
+  it('поддерживается один поворот; флаг не нужен над модулем и сохраняется при операциях', () => {
+    const r = lkitchen('R'); setModuleProps(r, 3, { turn: 'L' });
+    normalize(r);
+    expect(moduleList(r).filter(m => m.turn).length).toBe(1);
+    setModuleProps(r, 1, { over: true }); normalize(r);
+    const back = normalize(JSON.parse(JSON.stringify(r)));
+    expect(moduleList(back).filter(m => m.turn).length).toBe(1);
+    const k = moduleList(back).findIndex(m => m.turn); duplicateModule(back, k);
+    expect(moduleList(back).filter(m => m.turn).length).toBe(1);
+  });
+  it('мусор в turn сбрасывается; у модуля, ставшего основным, флага нет', () => {
+    const r = lkitchen('R'); r.modules[1].turn = 'X'; normalize(r);
+    expect(r.modules[1].turn).toBeUndefined();
+    const r2 = lkitchen('R'); let k = moduleList(r2).findIndex(m => m.turn); while (k > 0) k = moveModule(r2, k, -1);
+    expect(moduleList(r2)[0].turn).toBe('');
+  });
+});

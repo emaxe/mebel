@@ -119,9 +119,12 @@ export function normalizeModules(P) {
     m.name = typeof m.name === 'string' && m.name.trim() ? m.name.trim().slice(0, 40) : 'Модуль';
     m.gap = int(m.gap, 0, 2000); m.y = int(m.y, 0, 3000);
     if (m.over) m.over = true; else delete m.over;
+    if (m.turn !== 'L' && m.turn !== 'R') delete m.turn;
     delete m.P.modules; delete m.P.modName; delete m.P.modY; delete m.P.countertop;
     normalize(m.P);
   }
+  let turned = false;
+  for (const m of P.modules) { if (m.turn && (m.over || turned)) delete m.turn; if (m.turn) turned = true; }
   if (!P.modules.length) delete P.modules;
   if (P.countertop !== undefined) { const w = normalizeWorktop(P.countertop); if (w) P.countertop = w; else delete P.countertop; }
   if (typeof P.modName === 'string' && P.modName.trim()) P.modName = P.modName.trim().slice(0, 40); else delete P.modName;

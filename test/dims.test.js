@@ -53,3 +53,16 @@ describe('размеры в проекте из нескольких модул�
     expect(dimensions(m.spec, m.P, 0).some(x => x.id === 'PW')).toBe(false);
   });
 });
+
+describe('размеры повёрнутого модуля', () => {
+  it('точки поворачиваются вокруг вертикали, вектор сдвига линии тоже', () => {
+    const r = makePreset('kbase'), spec = buildSpec(r), rot = Math.PI / 2, off = [100, 50, -30];
+    const base = dimensions(spec, r, 0), tr = dimensions(spec, r, 0, { off, rot });
+    const R = v => [v[0] * Math.cos(rot) + v[2] * Math.sin(rot), v[1], -v[0] * Math.sin(rot) + v[2] * Math.cos(rot)];
+    base.forEach((d, i) => { const a = R(d.a); for (let k = 0; k < 3; k++) { expect(tr[i].a[k]).toBeCloseTo(a[k] + off[k], 6); expect(tr[i].off[k]).toBeCloseTo(R(d.off)[k], 6); } expect(tr[i].value).toBe(d.value); });
+  });
+  it('без поворота результат прежний', () => {
+    const r = makePreset('kbase'), spec = buildSpec(r);
+    expect(JSON.stringify(dimensions(spec, r, 0, { rot: 0 }))).toBe(JSON.stringify(dimensions(spec, r, 0)));
+  });
+});

@@ -262,7 +262,7 @@ function buildDims() {
   dimBox.textContent = ''; dimSvg.textContent = ''; dimEls = []; dimKey = '';
   if (!dimPrefs.on || !spec) return;
   const am = proj.mods[active];
-  for (const item of dimensions(spec, P, sel, { off: [am.x, am.y, am.z], total: proj.multi ? proj.spec.meta : null })) {
+  for (const item of dimensions(spec, P, sel, { off: [am.x, am.y, am.z], rot: am.rot || 0, total: proj.multi ? proj.spec.meta : null })) {
     const lines = ['ext', 'ext', 'main'].map(c => { const l = document.createElementNS(NS, 'line'); if (c === 'ext') l.setAttribute('class', 'ext'); else if (item.kind === 'gap') l.setAttribute('class', 'gap'); dimSvg.append(l); return l; });
     const btn = el('button', item.kind === 'gap' ? 'gap' : '', String(item.value));
     btn.title = item.edit ? 'Нажмите, чтобы ввести размер' : 'Просвет между полками';
@@ -300,14 +300,13 @@ function placeDims() {
 }
 stage.onFrame = placeDims;
 function highlight() {
-  const sc = stage._scene; if (outline) { sc.remove(outline); outline.geometry.dispose(); }
+  if (outline) { outline.removeFromParent(); outline.geometry.dispose(); outline = null; }
   partOutline(); buildDims();
   const m = spec.meta, s = m.sections[sel]; if (!s) return;
   const k = 1 / 1000;
   outline = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry((s.w - 6) * k, (m.ih - 6) * k, (m.D + 40) * k)), new THREE.LineBasicMaterial({ color: 0xd4672a, depthTest: false, transparent: true }));
-  const am = proj.mods[active];
-  outline.position.set((s.x + am.x) * k, ((m.yB + m.yT) / 2 + am.y) * k + model.position.y, 0.02 + am.z * k);
-  outline.renderOrder = 10; sc.add(outline);
+  outline.position.set(s.x * k, ((m.yB + m.yT) / 2) * k, 0.02);
+  outline.renderOrder = 10; moduleRoot(active).add(outline);
 }
 
 // ── generic controls (c.hint → "?" tooltip next to the label)
@@ -839,6 +838,14 @@ function drawModules() {
     lab.append(cb, ' Над предыдущим модулем'); lab.title = 'Поставить над предыдущим корпусом (навесной шкаф над нижним), а не справа от него';
     overRow = lab;
   }
+  let turnRow = null;
+  if (active > 0 && !cur.over) {
+    const taken = list.some(m => m.i !== active && m.turn), sel2 = el('select'), lab = el('label', 'modturn', 'Угол: ');
+    [['', 'Продолжает ряд'], ['R', 'Новый ряд вдоль правой стены'], ['L', 'Новый ряд вдоль левой стены']].forEach(([v, t]) => sel2.append(new Option(t, v, false, cur.turn === v)));
+    sel2.disabled = taken && !cur.turn; lab.title = taken && !cur.turn ? 'Угол уже задан другим модулем: поддерживается один поворот' : 'Начиная с этого модуля ряд идёт вдоль соседней стены под 90°: угловая кухня';
+    sel2.onchange = () => { act(() => setModuleProps(root, active, { turn: sel2.value }))(); drawModules(); render(true); };
+    lab.append(sel2); turnRow = lab;
+  }
   const acts = el('div', 'modrow acts');
   const btn = (t, title, fn, dis) => { const b = el('button', '', t); b.title = title; b.disabled = !!dis; b.onclick = fn; acts.append(b); };
   const moved = dir => { act(() => { active = moveModule(root, active, dir); })(); afterModuleChange(false); };
@@ -846,7 +853,7 @@ function drawModules() {
   btn('→', 'Сдвинуть модуль вправо', () => moved(1), active === list.length - 1);
   btn('Копия', 'Дублировать модуль', () => { act(() => { const i = duplicateModule(root, active); if (i >= 0) active = i; })(); afterModuleChange(true); }, moduleCount(root) >= 12);
   btn('Удалить', 'Убрать модуль из проекта', () => { act(() => { removeModule(root, active); })(); afterModuleChange(true); });
-  card.append(row1, row2); if (overRow) card.append(overRow); card.append(acts); modsBox.append(card);
+  card.append(row1, row2); if (overRow) card.append(overRow); if (turnRow) card.append(turnRow); card.append(acts); modsBox.append(card);
 }
 
 // ── пошаговая сборка в 3D: степпер на плашке «Вид»
@@ -922,12 +929,14 @@ const rayAt = e => {
   return ray;
 };
 const pickAt = e => rayAt(e).intersectObject(model, true).find(h => h.object.userData.section !== undefined || h.object.userData.part !== undefined);
+const moduleRoot = i => { let r = null; model.traverse(o => { if (o.userData.modRoot === i) r = o; }); return r || model; };
 const frontY = e => {
-  const m = spec.meta, k = 1 / 1000, am = proj.mods[active];
-  model.updateMatrixWorld(true);
-  const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -model.localToWorld(new THREE.Vector3(0, 0, (am.z + m.D / 2) * k)).z);
+  const m = spec.meta, k = 1 / 1000, mr = moduleRoot(active);
+  mr.updateWorldMatrix(true, false);
+  const n = new THREE.Vector3(0, 0, 1).transformDirection(mr.matrixWorld);
+  const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(n, mr.localToWorld(new THREE.Vector3(0, 0, (m.D / 2) * k)));
   const pt = rayAt(e).ray.intersectPlane(plane, new THREE.Vector3());
-  return pt ? model.worldToLocal(pt).y / k - am.y : null;
+  return pt ? mr.worldToLocal(pt).y / k : null;
 };
 let drag = null;
 const dragItem = d => P.sections[d.sec].items[d.i];

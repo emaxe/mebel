@@ -23,7 +23,7 @@ export function normalizeWorktop(w) {
   return out;
 }
 
-/** Группы нижних модулей, над которыми лежит столешница: [[mod, mod, …], …] в порядке раскладки. */
+/** Группы нижних модулей, над которыми лежит столешница: [[mod, mod, …], …]; ряды вдоль разных стен не смешиваются. */
 export function worktopRuns(mods) {
   const runs = [];
   let cur = null, prev = null;
@@ -31,7 +31,7 @@ export function worktopRuns(mods) {
     if (m.over) continue;
     const base = m.P.type === 'kbase' && !m.y;
     if (!base) { cur = null; prev = m; continue; }
-    const gapOk = cur && prev && prev === cur[cur.length - 1] && m.left - (prev.left + prev.W) < SPLIT_GAP;
+    const gapOk = cur && prev && prev === cur[cur.length - 1] && prev.run === m.run && m.s - (prev.s + prev.W) < SPLIT_GAP;
     if (gapOk) cur.push(m); else { cur = [m]; runs.push(cur); }
     prev = m;
   }
@@ -41,23 +41,34 @@ export function worktopRuns(mods) {
 /** Детали-столешницы в координатах общей спецификации (mods — результат buildProject после раскладки). */
 export function worktopParts(mods, wt) {
   if (!wt) return [];
-  const parts = [];
-  worktopRuns(mods).forEach((run, ri) => {
-    const left = Math.min(...run.map(m => m.x - m.W / 2)) - wt.side, right = Math.max(...run.map(m => m.x + m.W / 2)) + wt.side;
-    const zBack = Math.min(...run.map(m => m.z - m.D / 2)), depth = Math.max(...run.map(m => m.D)) + wt.front;
-    const yTop = Math.max(...run.map(m => m.y + m.H)), L = right - left;
-    const cuts = [];
-    const list = ri === 0 ? wt.cutouts : [];
-    for (const c of list) {
-      const u0 = clamp(c.x, 0, Math.max(0, L - 10)), u1 = Math.min(L, u0 + c.w), v1 = clamp(depth - c.y, 10, depth), v0 = Math.max(0, v1 - c.h);
-      if (u1 - u0 >= 10 && v1 - v0 >= 10) cuts.push({ kind: 'hole', u0, v0, u1, v1, r: Math.min(c.r, (u1 - u0) / 2, (v1 - v0) / 2), what: CUTOUT_PRESETS[c.kind].label });
+  const parts = [], runs = worktopRuns(mods), frontEdge = {};
+  runs.forEach((run, ri) => {
+    const turned = run[0].run === 1, yTop = Math.max(...run.map(m => m.y + m.H)), depth = Math.max(...run.map(m => m.D)) + wt.front;
+    let c, L, W, cuts = [];
+    if (!turned) {
+      const left = Math.min(...run.map(m => m.x - m.W / 2)) - wt.side, right = Math.max(...run.map(m => m.x + m.W / 2)) + wt.side, zBack = Math.min(...run.map(m => m.z - m.D / 2));
+      L = right - left; W = depth; c = [(left + right) / 2, yTop + wt.T / 2, zBack + depth / 2];
+      frontEdge.z = Math.max(frontEdge.z ?? -Infinity, zBack + depth);
+      if (ri === 0) for (const k of wt.cutouts) {
+        const u0 = clamp(k.x, 0, Math.max(0, L - 10)), u1 = Math.min(L, u0 + k.w), v1 = clamp(depth - k.y, 10, depth), v0 = Math.max(0, v1 - k.h);
+        if (u1 - u0 >= 10 && v1 - v0 >= 10) cuts.push({ kind: 'hole', u0, v0, u1, v1, r: Math.min(k.r, (u1 - u0) / 2, (v1 - v0) / 2), what: CUTOUT_PRESETS[k.kind].label });
+      }
+    } else {
+      const m0 = run[0], right = m0.rot < 0;
+      const zEnd = Math.max(...run.map(m => m.z + m.W / 2)) + wt.side;
+      const zStart = frontEdge.z !== undefined ? frontEdge.z : Math.min(...run.map(m => m.z - m.W / 2)) - wt.side;
+      const xBack = right ? Math.max(...run.map(m => m.x + m.D / 2)) : Math.min(...run.map(m => m.x - m.D / 2));
+      L = depth; W = zEnd - zStart;
+      c = [right ? xBack - depth / 2 : xBack + depth / 2, yTop + wt.T / 2, (zStart + zEnd) / 2];
     }
+    if (W < 20 || L < 20) return;
     const p = {
-      kind: 'panel', mat: 'top', label: `Столешница ${wt.T} мм`, T: wt.T, name: 'Столешница', plane: 'xz', L, W: depth, c: [(left + right) / 2, yTop + wt.T / 2, zBack + depth / 2],
+      kind: 'panel', mat: 'top', label: `Столешница ${wt.T} мм`, T: wt.T, name: 'Столешница', plane: 'xz', L, W, c,
       holes: [], grooves: [], sec: 0, asm: 'final', edges: {},
       notes: [`свес спереди ${wt.front} мм, по бокам ${wt.side} мм`, 'торцы закрыть торцевой планкой, стык со стеной — плинтус или герметик'],
     };
-    if (cuts.length) { p.cutouts = cuts.map(({ what, ...c }) => c); p.notes.push(...cuts.map(c => `вырез «${c.what}» ${Math.round(c.u1 - c.u0)}×${Math.round(c.v1 - c.v0)} мм`)); }
+    if (turned) p.notes.push('вторая столешница угловой кухни: стык с первой встык под 90°, стяжка столешничными стяжками');
+    if (cuts.length) { p.cutouts = cuts.map(({ what, ...k }) => k); p.notes.push(...cuts.map(k => `вырез «${k.what}» ${Math.round(k.u1 - k.u0)}×${Math.round(k.v1 - k.v0)} мм`)); }
     parts.push(p);
   });
   return parts;

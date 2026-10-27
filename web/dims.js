@@ -17,7 +17,7 @@ export function shelfGaps(spec, sel) {
 }
 
 /** Список размеров: { id, kind, a, b, off, value, edit } — a и b концы измеряемого отрезка, off сдвиг линии от детали. */
-export function dimensions(spec, P, sel, { gaps = true, off = [0, 0, 0], total = null } = {}) {
+export function dimensions(spec, P, sel, { gaps = true, off = [0, 0, 0], rot = 0, total = null } = {}) {
   const m = spec.meta, W = m.W, D = m.D, H = m.H, zf = D / 2, out = [];
   out.push({ id: 'W', kind: 'W', a: [-W / 2, 0, zf], b: [W / 2, 0, zf], off: [0, -110, 0], value: round(W), edit: { k: 'W' } });
   out.push({ id: 'H', kind: 'H', a: [W / 2, 0, zf], b: [W / 2, H, zf], off: [140, 0, 0], value: round(H), edit: { k: 'height' } });
@@ -27,8 +27,9 @@ export function dimensions(spec, P, sel, { gaps = true, off = [0, 0, 0], total =
     const s = m.sections[sel];
     if (s) shelfGaps(spec, sel).forEach(([lo, hi], j) => out.push({ id: `G${j}`, kind: 'gap', a: [s.x - s.w / 2, lo, zf], b: [s.x - s.w / 2, hi, zf], off: [-90, 0, 0], value: round(hi - lo), edit: null }));
   }
-  const sh = v => [v[0] + off[0], v[1] + off[1], v[2] + off[2]];
-  for (const d of out) { d.a = sh(d.a); d.b = sh(d.b); }
+  const cs = Math.cos(rot), sn = Math.sin(rot), rv = v => [v[0] * cs + v[2] * sn, v[1], -v[0] * sn + v[2] * cs];
+  const sh = v => { const r = rv(v); return [r[0] + off[0], r[1] + off[1], r[2] + off[2]]; };
+  for (const d of out) { d.a = sh(d.a); d.b = sh(d.b); if (rot) d.off = rv(d.off); }
   if (total) out.push({ id: 'PW', kind: 'W', a: [-total.W / 2, 0, total.D / 2], b: [total.W / 2, 0, total.D / 2], off: [0, -260, 0], value: round(total.W), edit: null });
   return out;
 }

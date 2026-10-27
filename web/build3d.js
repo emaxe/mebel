@@ -168,12 +168,13 @@ export function build3DProject(THREE, proj, view = {}, opts = {}) {
   const built = proj.mods.map(m => {
     const c = build3D(THREE, m.spec, { ...m.P, open: view.open, hideDoors: view.hideDoors, showHoles: view.showHoles }, opts);
     c.traverse(o => { o.userData.mod = m.i; });
+    c.userData.modRoot = m.i;
     return c;
   });
   const wt = proj.worktops && proj.worktops.length ? proj.worktops : null;
   if (!proj.multi && !wt) return built[0];
   const grp = new THREE.Group();
-  built.forEach((c, i) => { const m = proj.mods[i]; c.position.set(m.x * k, m.y * k, m.z * k); grp.add(c); });
+  built.forEach((c, i) => { const m = proj.mods[i]; c.position.set(m.x * k, m.y * k, m.z * k); c.rotation.y = m.rot || 0; grp.add(c); });
   if (wt) {
     const c = build3D(THREE, { parts: wt, extras: [], hw: [], hwx: [], warnings: [], meta: proj.spec.meta }, { ...proj.mods[0].P, open: 0 }, opts);
     c.traverse(o => { o.userData.mod = -1; });
