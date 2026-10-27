@@ -18,20 +18,36 @@ export function roundedRect(u0, v0, u1, v1, rad = [0, 0, 0, 0]) {
   return out;
 }
 
-/** Контур детали L×W с выемками в углах (cutouts kind 'notch'); внутренний угол выемки скругляется по c.r. */
+export const CORNER_KINDS = ['notch', 'chamfer', 'round'];
+export const isCornerKind = k => CORNER_KINDS.includes(k);
+
+/**
+ * Контур детали L×W. Угловые вырезы (cutouts с corner): notch — прямоугольная выемка с внутренним радиусом c.r, chamfer — скос угла w×h,
+ * round — скругление угла радиусом c.r. Результат — вершины с bulge, обход против часовой.
+ */
 export function partContour(L, W, cutouts = []) {
-  const notch = {};
-  for (const c of cutouts) if (c.kind === 'notch' && CORNER[c.corner]) notch[CORNER[c.corner]] = c;
+  const cor = {};
+  for (const c of cutouts) if (isCornerKind(c.kind) && CORNER[c.corner]) cor[CORNER[c.corner]] = c;
   const raw = [];
-  const add = (pt, inner = 0) => raw.push({ p: pt, inner });
-  const n = notch;
-  if (n.bl) { add([0, n.bl.v1]); add([n.bl.u1, n.bl.v1], n.bl.r || 0); add([n.bl.u1, 0]); } else add([0, 0]);
-  if (n.br) { add([n.br.u0, 0]); add([n.br.u0, n.br.v1], n.br.r || 0); add([L, n.br.v1]); } else add([L, 0]);
-  if (n.tr) { add([L, n.tr.v0]); add([n.tr.u0, n.tr.v0], n.tr.r || 0); add([n.tr.u0, W]); } else add([L, W]);
-  if (n.tl) { add([n.tl.u1, W]); add([n.tl.u1, n.tl.v0], n.tl.r || 0); add([0, n.tl.v0]); } else add([0, W]);
+  const add = (pt, inner = 0, b = 0) => raw.push({ p: pt, inner, b });
+  const size = c => [Math.max(0, c.u1 - c.u0), Math.max(0, c.v1 - c.v0)];
+  const rad = c => Math.max(0, Math.min(c.r || 0, L / 2, W / 2));
+  const corner = (key, plain, notch, chamfer, round) => {
+    const c = cor[key];
+    if (!c) return add(plain);
+    if (c.kind === 'notch') return notch(c);
+    const [w, h] = size(c);
+    if (c.kind === 'chamfer') return chamfer(w, h);
+    const r = rad(c);
+    return r ? round(r) : add(plain);
+  };
+  corner('bl', [0, 0], c => { add([0, c.v1]); add([c.u1, c.v1], c.r || 0); add([c.u1, 0]); }, (w, h) => { add([0, h]); add([w, 0]); }, r => { add([0, r], 0, K); add([r, 0]); });
+  corner('br', [L, 0], c => { add([c.u0, 0]); add([c.u0, c.v1], c.r || 0); add([L, c.v1]); }, (w, h) => { add([L - w, 0]); add([L, h]); }, r => { add([L - r, 0], 0, K); add([L, r]); });
+  corner('tr', [L, W], c => { add([L, c.v0]); add([c.u0, c.v0], c.r || 0); add([c.u0, W]); }, (w, h) => { add([L, W - h]); add([L - w, W]); }, r => { add([L, W - r], 0, K); add([L - r, W]); });
+  corner('tl', [0, W], c => { add([c.u1, W]); add([c.u1, c.v0], c.r || 0); add([0, c.v0]); }, (w, h) => { add([w, W]); add([0, W - h]); }, r => { add([r, W], 0, K); add([0, W - r]); });
   const out = [], N = raw.length;
   raw.forEach((q, i) => {
-    if (!q.inner) { out.push({ x: q.p[0], y: q.p[1], b: 0 }); return; }
+    if (!q.inner) { out.push({ x: q.p[0], y: q.p[1], b: q.b }); return; }
     const prev = raw[(i + N - 1) % N].p, next = raw[(i + 1) % N].p;
     const r = Math.min(q.inner, Math.hypot(q.p[0] - prev[0], q.p[1] - prev[1]), Math.hypot(next[0] - q.p[0], next[1] - q.p[1]));
     if (!(r > 0)) { out.push({ x: q.p[0], y: q.p[1], b: 0 }); return; }
@@ -101,7 +117,7 @@ export function dxfFromGroups(groups, { edges = true, labels = true } = {}) {
       const o = (mi.rebate[0] - mi.window[0]) / 2;
       poly(`FALTS_${mi.rebateDepth}_B`, roundedRect(mi.frameW - o, mi.frameW - o, g.L - mi.frameW + o, g.W - mi.frameW + o, cr), x0, y0);
     }
-    for (const c of g.cutouts || []) if (c.kind !== 'notch') poly('VYREZ', roundedRect(c.u0, c.v0, c.u1, c.v1, [c.r, c.r, c.r, c.r]), x0, y0);
+    for (const c of g.cutouts || []) if (!isCornerKind(c.kind)) poly('VYREZ', roundedRect(c.u0, c.v0, c.u1, c.v1, [c.r, c.r, c.r, c.r]), x0, y0);
     for (const h of g.holes) {
       const x = x0 + h.u, y = y0 + h.v;
       if (h.f === 'A' || h.f === 'B') circle(`${holeKey(h)}_${h.f}`, x, y, h.d / 2);

@@ -38,11 +38,19 @@ export function groupParts(spec) {
 
 export function edgeSummary(groups) {
   const m = new Map();
-  for (const g of groups) for (const [e, v] of Object.entries(g.edges)) if (v) {
-    // выемка в углу срезает часть кромки (новые торцы выемки не кромятся)
-    const cut = (g.cutouts || []).filter(c => c.kind === 'notch' && c.corner.includes(e)).reduce((a, c) => a + (e[0] === 'd' ? c.u1 - c.u0 : c.v1 - c.v0), 0);
-    const len = Math.max(0, (e[0] === 'd' ? g.L : g.W) - cut) * g.qty;
-    m.set(v, (m.get(v) || 0) + len);
+  const put = (t, mm) => m.set(t, (m.get(t) || 0) + mm);
+  for (const g of groups) {
+    const cs = (g.cutouts || []).filter(c => c.corner);
+    for (const [e, v] of Object.entries(g.edges)) if (v) {
+      // угловой вырез срезает часть кромки: у выемки новые торцы не кромятся, у скоса и скругления кромится новая линия (ниже)
+      const cut = cs.filter(c => c.corner.includes(e)).reduce((a, c) => a + (e[0] === 'd' ? c.u1 - c.u0 : c.v1 - c.v0), 0);
+      put(v, Math.max(0, (e[0] === 'd' ? g.L : g.W) - cut) * g.qty);
+    }
+    for (const c of cs) {
+      if (c.kind !== 'chamfer' && c.kind !== 'round') continue;
+      const [a, b] = [c.corner.slice(0, 2), c.corner.slice(2)], v = Math.max(g.edges[a] || 0, g.edges[b] || 0);
+      if (v) put(v, (c.kind === 'chamfer' ? Math.hypot(c.u1 - c.u0, c.v1 - c.v0) : (Math.PI * c.r) / 2) * g.qty);
+    }
   }
   return [...m.entries()].sort((a, b) => b[0] - a[0]).map(([t, mm]) => ({ t, m: mm / 1000 }));
 }

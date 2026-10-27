@@ -91,15 +91,27 @@ function normalizeZone(s, R, ih, t, width = s.width, depth = 0) {
 }
 /**
  * Вырезы в деталях: { part: имя детали, sec: 0 (все) или номер секции, kind: 'hole' | 'notch', w, h, r, u, v, corner }.
- * hole — прямоугольный вырез со скруглением r, центр в (u, v) от кромок Ш1 и Д1; notch — выемка в углу corner ('w1d1'…'w2d2'), размер w×h, r — радиус внутреннего угла.
+ * hole — прямоугольный вырез со скруглением r, центр в (u, v) от кромок Ш1 и Д1; notch — выемка в углу corner ('w1d1'…'w2d2'), размер w×h, r — радиус внутреннего угла;
+ * chamfer — скос угла corner на w×h; round — скругление угла corner радиусом r (w = h = r).
  */
 const CORNERS = ['w1d1', 'w1d2', 'w2d1', 'w2d2'];
 export function normalizeCutouts(list) {
   const num = (v, d) => (Number.isFinite(+v) && v !== '' && v !== null ? +v : d);
   return (Array.isArray(list) ? list : []).slice(0, 20).filter(c => c && typeof c === 'object').map(c => {
-    const w = clamp(num(c.w, 60), 5, 3000), h = clamp(num(c.h, 60), 5, 3000);
-    return { part: String(c.part || 'Задняя стенка').slice(0, 60), sec: Math.max(0, Math.round(num(c.sec, 0))), kind: c.kind === 'notch' ? 'notch' : 'hole', w, h, r: clamp(num(c.r, 0), 0, Math.min(w, h) / 2), u: num(c.u, 0), v: num(c.v, 0), corner: CORNERS.includes(c.corner) ? c.corner : 'w1d1' };
+    const kind = c.kind === 'notch' || c.kind === 'chamfer' || c.kind === 'round' ? c.kind : 'hole';
+    const round = kind === 'round', w = clamp(round ? num(c.r, 50) : num(c.w, 60), 5, 3000), h = clamp(round ? num(c.r, 50) : num(c.h, 60), 5, 3000);
+    const r = round ? w : kind === 'chamfer' ? 0 : clamp(num(c.r, 0), 0, Math.min(w, h) / 2);
+    return { part: String(c.part || 'Задняя стенка').slice(0, 60), sec: Math.max(0, Math.round(num(c.sec, 0))), kind, w, h, r, u: num(c.u, 0), v: num(c.v, 0), corner: CORNERS.includes(c.corner) ? c.corner : 'w1d1' };
   });
+}
+
+/** Радиусные торцы: скругление передних углов обеих боковин радиусом r (верхнего и нижнего). Прежние скругления этих углов заменяются. */
+export function roundSideEnds(P, r) {
+  const rad = clamp(Math.round(+r) || 0, 5, 300), parts = ['Боковина левая', 'Боковина правая'], corners = ['w2d2', 'w1d2'];
+  P.cutouts = (P.cutouts || []).filter(c => !(c.kind === 'round' && parts.includes(c.part) && corners.includes(c.corner) && !c.sec));
+  for (const part of parts) for (const corner of corners) P.cutouts.push({ part, sec: 0, kind: 'round', w: rad, h: rad, r: rad, u: 0, v: 0, corner });
+  P.cutouts = normalizeCutouts(P.cutouts);
+  return rad;
 }
 
 /** Bring a project to what its type supports: ranges, doors, antresol, items, front mode. Idempotent. */

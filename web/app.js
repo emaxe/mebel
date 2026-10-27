@@ -13,7 +13,7 @@ import { normalizeRoom, ROOM_DEFAULT, OPENING_KINDS, MAX_OPENINGS, alignOffset }
 import { buildProject, moduleList, addModule, fillWall, duplicateModule, removeModule, moveModule, setModuleProps, cabinetOf, moduleCount } from './project.js';
 import { orientLines, edgeNames, machiningRows } from './partinfo.js';
 import { autoFixAsync, kinProblems } from './autofix.js';
-import { MIN_DRAWER_H, FILL_LABELS, rulesOf, makePreset, normalize, fillItems, innerH, autoShelves, stepShelves, fitWidth, totalWidth, sectionOfMessage, moveItem, autoDrawers, packDrawers, moveDivider, moveZoneSplit, redistribute, fitSections, clamp, asCell, MAX_CELL_DEPTH } from './rules.js';
+import { MIN_DRAWER_H, FILL_LABELS, rulesOf, makePreset, normalize, fillItems, innerH, autoShelves, stepShelves, fitWidth, totalWidth, sectionOfMessage, moveItem, autoDrawers, packDrawers, moveDivider, moveZoneSplit, roundSideEnds, redistribute, fitSections, clamp, asCell, MAX_CELL_DEPTH } from './rules.js';
 import { zonesOf } from './cells.js';
 import { TEMPLATES, libraryEntry, instantiate, MAX_LIBRARY } from './library.js';
 import { loadCatalog, saveCatalog, sanitizeCatalog, sheetFor, isTextured, DEFAULT_CATALOG, CATALOG_KEY, catalogHooks } from './catalog.js';
@@ -403,14 +403,16 @@ function cutoutsEditor() {
     P.cutouts.forEach((c, i) => {
       const card = el('div', 'cutcard'), top = el('div', 'cutrow');
       const part = el('select'); [...new Set([c.part, ...names()])].forEach(n => part.append(new Option(n, n, false, n === c.part))); part.onchange = () => edit(i, 'part', part.value);
-      const kind = el('select'); [['hole', 'Вырез'], ['notch', 'Выемка в углу']].forEach(([v, l]) => kind.append(new Option(l, v, false, v === c.kind))); kind.onchange = () => edit(i, 'kind', kind.value);
+      const kind = el('select'); [['hole', 'Вырез'], ['notch', 'Выемка в углу'], ['chamfer', 'Скос угла'], ['round', 'Скругление угла']].forEach(([v, l]) => kind.append(new Option(l, v, false, v === c.kind))); kind.onchange = () => edit(i, 'kind', kind.value);
       const del = el('button', 'x', '✕'); del.title = 'Удалить вырез'; del.onclick = () => { act(() => P.cutouts.splice(i, 1))(); render(false); draw(); };
       top.append(part, kind, del); card.append(top);
       const sp = sample(c.part);
       card.append(el('div', 'hint2', sp ? `Деталь ${Math.round(sp.L)}×${Math.round(sp.W)} мм (Ш — длина, Д — ширина). ${orientLines(sp)[0]}` : 'Такой детали в изделии сейчас нет: вырез не применится.'));
       const row = el('div', 'cutrow');
-      row.append(num(i, 'w', c.kind === 'notch' ? 'Размер по Ш, мм' : 'Ширина, мм'), num(i, 'h', c.kind === 'notch' ? 'Размер по Д, мм' : 'Высота, мм'), num(i, 'r', 'Радиус, мм', 'Скругление углов выреза или внутреннего угла выемки'));
-      if (c.kind === 'notch') {
+      const corner = c.kind === 'notch' || c.kind === 'chamfer' || c.kind === 'round';
+      if (c.kind === 'round') row.append(num(i, 'r', 'Радиус, мм', 'Радиус скругления угла детали'));
+      else row.append(num(i, 'w', corner ? 'Размер по Ш, мм' : 'Ширина, мм'), num(i, 'h', corner ? 'Размер по Д, мм' : 'Высота, мм'), ...(c.kind === 'chamfer' ? [] : [num(i, 'r', 'Радиус, мм', 'Скругление углов выреза или внутреннего угла выемки')]));
+      if (corner) {
         const cs = el('select'); [['w1d1', 'угол Ш1·Д1'], ['w2d1', 'угол Ш2·Д1'], ['w1d2', 'угол Ш1·Д2'], ['w2d2', 'угол Ш2·Д2']].forEach(([v, l]) => cs.append(new Option(l, v, false, v === c.corner))); cs.onchange = () => edit(i, 'corner', cs.value);
         row.append(cs);
       } else row.append(num(i, 'u', 'Центр от Ш1, мм', 'Расстояние от торца Ш1 до центра выреза вдоль длины'), num(i, 'v', 'Центр от Д1, мм', 'Расстояние от кромки Д1 до центра выреза вдоль ширины'));
@@ -423,7 +425,15 @@ function cutoutsEditor() {
       P.cutouts.push({ part: name, sec: 0, kind: 'hole', w: 60, h: 60, r: 10, u: sp ? sp.L / 2 : 100, v: sp ? sp.W / 2 : 100, corner: 'w1d1' });
       render(false); draw();
     })();
-    box.append(add);
+    const rnd = el('button', 'mini', '+ Радиусные торцы боковин');
+    rnd.title = 'Скруглить передние углы обеих боковин (радиус задаётся)';
+    rnd.onclick = async () => {
+      const v = await askText('Радиус скругления передних углов боковин, мм', '60');
+      const r = Math.round(+v);
+      if (!Number.isFinite(r) || r < 5) { if (v) toast('Радиус от 5 до 300 мм'); return; }
+      act(() => { roundSideEnds(P, r); })(); render(false); draw();
+    };
+    box.append(add, rnd);
   };
   draw();
   return box;
@@ -891,7 +901,7 @@ async function editRoom() {
     const fl = Object.assign(el('input'), { type: 'checkbox', checked: fill }), fb = el('label', 'wtrow'); fl.onchange = () => { fill = fl.checked; };
     fb.append(fl, ' Закрыть остаток стены A фальшпанелью (при остатке от 20 до 600 мм)');
     body.append(ra, fb);
-    const r2 = el('div', 'wtrow'); r2.append(lab('Плинтус: высота, мм (0 — нет)', num(rm, 'skirt', 0, 300)), lab('Плинтус: толщина, мм', num(rm, 'skirtT', 5, 60))); body.append(r2);
+    const r2 = el('div', 'wtrow'); r2.append(lab('Плинтус: высота, мм (0 — нет)', num(rm, 'skirt', 0, 300)), lab('Плинтус: толщина, мм', num(rm, 'skirtT', 5, 60)), lab('Допуск на кривизну стен, мм', num(rm, 'tol', 0, 50))); body.append(r2);
     body.append(el('h4', '', 'Проёмы'));
     rm.openings.forEach((o, i) => {
       const r = el('div', 'wtcut'), wall = el('select');

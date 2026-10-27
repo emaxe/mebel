@@ -1,25 +1,30 @@
 // three.js model from the furniture spec (mm → m).
 import { dims, groupPose, solve } from './kinematics.js';
+import { partContour, isCornerKind } from './dxf.js';
 export { dims };
 const HOLE_COL = { 35: 0xd4672a, 15: 0x8e44ad, 8: 0x2f8f5b, 7: 0x2b6cb0, 5: 0x2f2f2f, 3: 0x7a7a7a, 4: 0x7a7a7a };
 
 /**
  * opts.asm = { shown: Set этапов, current: этап шага } — режим пошаговой сборки: рисуются только собранные этапы, текущий подсвечен, двери закрыты.
  */
-/** Деталь с вырезами: контур с выемками и отверстиями-вырезами, выдавленный на толщину (мм → м). Радиус выемок в углу не показывается. */
+/** Деталь с вырезами: контур с выемками и отверстиями-вырезами, выдавленный на толщину (мм → м). Выемки, скосы и скругления углов входят в контур. */
+/** Контур с bulge (вершины { x, y, b }, обход против часовой) → THREE.Shape: дуги через центр и углы. */
+function contourShape(THREE, pts) {
+  const s = new THREE.Shape(), n = pts.length;
+  s.moveTo(pts[0].x, pts[0].y);
+  for (let i = 0; i < n; i++) {
+    const p = pts[i], q = pts[(i + 1) % n];
+    if (!p.b) { if (i < n - 1) s.lineTo(q.x, q.y); else s.lineTo(pts[0].x, pts[0].y); continue; }
+    const dx = q.x - p.x, dy = q.y - p.y, l = Math.hypot(dx, dy), sag = (Math.abs(p.b) * l) / 2, r = (l * l / 4 + sag * sag) / (2 * sag), sg = Math.sign(p.b);
+    const off = (r - sag) * sg, cx = (p.x + q.x) / 2 - (dy / l) * off, cy = (p.y + q.y) / 2 + (dx / l) * off;
+    s.absarc(cx, cy, r, Math.atan2(p.y - cy, p.x - cx), Math.atan2(q.y - cy, q.x - cx), p.b < 0);
+  }
+  return s;
+}
+
 function cutGeometry(THREE, p, k) {
-  const { L, W, T } = p, cs = p.cutouts, notch = {};
-  for (const c of cs) if (c.kind === 'notch' && !notch[c.corner]) notch[c.corner] = { w: c.u1 - c.u0, h: c.v1 - c.v0 };
-  const n = notch, s = new THREE.Shape(), a = n.w1d1, b = n.w2d1, c2 = n.w2d2, d = n.w1d2;
-  s.moveTo(a ? a.w : 0, 0); s.lineTo(b ? L - b.w : L, 0);
-  if (b) { s.lineTo(L - b.w, b.h); s.lineTo(L, b.h); }
-  s.lineTo(L, c2 ? W - c2.h : W);
-  if (c2) { s.lineTo(L - c2.w, W - c2.h); s.lineTo(L - c2.w, W); }
-  s.lineTo(d ? d.w : 0, W);
-  if (d) { s.lineTo(d.w, W - d.h); s.lineTo(0, W - d.h); }
-  s.lineTo(0, a ? a.h : 0);
-  if (a) { s.lineTo(a.w, a.h); s.lineTo(a.w, 0); }
-  for (const c of cs) if (c.kind !== 'notch') {
+  const { L, W, T } = p, cs = p.cutouts, s = contourShape(THREE, partContour(L, W, cs));
+  for (const c of cs) if (!isCornerKind(c.kind)) {
     const h = new THREE.Path(), r = Math.min(c.r || 0, (c.u1 - c.u0) / 2, (c.v1 - c.v0) / 2);
     h.moveTo(c.u0 + r, c.v0); h.lineTo(c.u1 - r, c.v0);
     if (r) h.absarc(c.u1 - r, c.v0 + r, r, -Math.PI / 2, 0, false);

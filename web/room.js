@@ -1,7 +1,7 @@
 // Помещение проекта: стены A (основная), B (перпендикулярная при угловой кухне) и C (напротив A при П-образной), потолок, проёмы и плинтус. Без DOM: данные, привязка модулей к стенам и проверки.
 import { footprint } from './plan.js';
 
-export const ROOM_DEFAULT = { w: 3600, d: 2800, h: 2700, x: 0, skirt: 0, skirtT: 15, openings: [] };
+export const ROOM_DEFAULT = { w: 3600, d: 2800, h: 2700, x: 0, skirt: 0, skirtT: 15, tol: 0, openings: [] };
 export const OPENING_KINDS = { door: { label: 'Дверь', w: 900, h: 2050, y: 0 }, window: { label: 'Окно', w: 1200, h: 1300, y: 900 } };
 export const MAX_OPENINGS = 12;
 
@@ -11,7 +11,7 @@ const num = (v, lo, hi, d) => { const n = Math.round(+v); return Number.isFinite
 export function normalizeRoom(r) {
   if (!r || typeof r !== 'object' || Array.isArray(r)) return null;
   const w = num(r.w, 500, 20000, ROOM_DEFAULT.w), d = num(r.d, 500, 20000, ROOM_DEFAULT.d), h = num(r.h, 1500, 5000, ROOM_DEFAULT.h);
-  const out = { w, d, h, x: num(r.x, 0, 20000, 0), skirt: num(r.skirt, 0, 300, 0), skirtT: num(r.skirtT, 5, 60, 15), openings: [] };
+  const out = { w, d, h, x: num(r.x, 0, 20000, 0), skirt: num(r.skirt, 0, 300, 0), skirtT: num(r.skirtT, 5, 60, 15), tol: num(r.tol, 0, 50, 0), openings: [] };
   for (const o of (Array.isArray(r.openings) ? r.openings : []).slice(0, MAX_OPENINGS)) {
     if (!o || typeof o !== 'object') continue;
     const kind = o.kind === 'window' ? 'window' : 'door', wall = o.wall === 'B' || o.wall === 'C' ? o.wall : 'A', len = wall === 'B' ? d : w;
@@ -60,6 +60,17 @@ export function roomWarnings(proj, room) {
       const along = o.wall === 'B' ? over(p.v0, p.v1, o.x, o.x + o.w) : over(p.u0, p.u1, o.x, o.x + o.w);
       if (along > 1 && over(p.y0, p.y1, o.y, o.y + o.h) > 1) out.push(`${m.name}: перекрывает ${label} (${o.x}…${o.x + o.w} мм)`);
     }
+  }
+  if (room.tol > 0) {
+    // допуск на кривизну стен: между корпусами и стенами должен оставаться запас, иначе корпус не встанет в проём
+    for (const wall of ['A', 'B', 'C']) {
+      const ms = placed.filter(({ m }) => wallOf(m) === wall);
+      if (!ms.length) continue;
+      const len = wall === 'B' ? room.d : room.w, end = Math.max(...ms.map(({ p }) => (wall === 'B' ? p.v1 : p.u1))), free = len - end;
+      if (free >= -0.5 && free < room.tol - 0.5) out.push(`Стена ${wall}: запас ${mm(free)} мм меньше допуска на кривизну ${room.tol} мм — нужен добор или зазор`);
+    }
+    const top = Math.max(...placed.map(({ p }) => p.y1));
+    if (room.h - top >= -0.5 && room.h - top < room.tol - 0.5) out.push(`Потолок: запас ${mm(room.h - top)} мм меньше допуска на кривизну ${room.tol} мм`);
   }
   if (room.skirt > 0) {
     const bad = placed.filter(({ m }) => m.y === 0 && !(m.P.base === 'legs' && m.P.plinth >= room.skirt));

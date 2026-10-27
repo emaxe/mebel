@@ -36,9 +36,11 @@ export function machiningRows(g) {
   }
   for (const c of g.cutouts || []) {
     const w = c.u1 - c.u0, h = c.v1 - c.v0;
-    rows.push(c.kind === 'notch'
-      ? { kind: 'cut', title: 'Выемка в углу', size: `${n1(w)}×${n1(h)}`, pos: `угол ${e[c.corner.slice(0, 2)]} / ${e[c.corner.slice(2)]}`, face: 'сквозная', depth: 'скв.', note: c.r ? `радиус внутреннего угла R${n1(c.r)}` : '' }
-      : { kind: 'cut', title: 'Вырез', size: `${n1(w)}×${n1(h)}`, pos: `от Ш1 ${n1(c.u0)}–${n1(c.u1)}, от Д1 ${n1(c.v0)}–${n1(c.v1)}`, face: 'сквозной', depth: 'скв.', note: c.r ? `скругление R${n1(c.r)}` : '' });
+    const corner = `угол ${e[c.corner && c.corner.slice(0, 2)]} / ${e[c.corner && c.corner.slice(2)]}`;
+    if (c.kind === 'notch') rows.push({ kind: 'cut', title: 'Выемка в углу', size: `${n1(w)}×${n1(h)}`, pos: corner, face: 'сквозная', depth: 'скв.', note: c.r ? `радиус внутреннего угла R${n1(c.r)}` : '' });
+    else if (c.kind === 'chamfer') rows.push({ kind: 'cut', title: 'Скос угла', size: `${n1(w)}×${n1(h)}`, pos: corner, face: 'сквозной', depth: 'скв.', note: `под углом, длина среза ${n1(Math.hypot(w, h))}` });
+    else if (c.kind === 'round') rows.push({ kind: 'cut', title: 'Скругление угла', size: `R${n1(c.r)}`, pos: corner, face: 'сквозное', depth: 'скв.', note: '' });
+    else rows.push({ kind: 'cut', title: 'Вырез', size: `${n1(w)}×${n1(h)}`, pos: `от Ш1 ${n1(c.u0)}–${n1(c.u1)}, от Д1 ${n1(c.v0)}–${n1(c.v1)}`, face: 'сквозной', depth: 'скв.', note: c.r ? `скругление R${n1(c.r)}` : '' });
   }
   return rows;
 }

@@ -407,11 +407,11 @@ function applyCutouts(P, parts, warnings) {
     if (!targets.length) { warnings.push(`Вырез: деталь «${c.part}»${c.sec ? ` (секция ${c.sec})` : ''} не найдена`); continue; }
     for (const p of targets) {
       let u0, u1, v0, v1;
-      if (c.kind === 'notch') { [u0, u1] = c.corner[1] === '1' ? [0, c.w] : [p.L - c.w, p.L]; [v0, v1] = c.corner[3] === '1' ? [0, c.h] : [p.W - c.h, p.W]; }
+      if (c.kind !== 'hole') { [u0, u1] = c.corner[1] === '1' ? [0, c.w] : [p.L - c.w, p.L]; [v0, v1] = c.corner[3] === '1' ? [0, c.h] : [p.W - c.h, p.W]; }
       else { u0 = c.u - c.w / 2; u1 = c.u + c.w / 2; v0 = c.v - c.h / 2; v1 = c.v + c.h / 2; }
       const r1 = x => Math.round(x * 10) / 10;
-      if (c.kind === 'notch' ? c.w > p.L - 20 || c.h > p.W - 20 : u0 < 10 || v0 < 10 || u1 > p.L - 10 || v1 > p.W - 10) warnings.push(`Вырез на «${p.name}»${p.sec ? ` (секция ${p.sec})` : ''} не помещается в деталь ${Math.round(p.L)}×${Math.round(p.W)} мм (до края не меньше 10 мм)`);
-      (p.cutouts = p.cutouts || []).push({ kind: c.kind, u0: r1(u0), v0: r1(v0), u1: r1(u1), v1: r1(v1), r: c.r, ...(c.kind === 'notch' ? { corner: c.corner } : {}) });
+      if (c.kind !== 'hole' ? c.w > p.L - 20 || c.h > p.W - 20 : u0 < 10 || v0 < 10 || u1 > p.L - 10 || v1 > p.W - 10) warnings.push(`Вырез на «${p.name}»${p.sec ? ` (секция ${p.sec})` : ''} не помещается в деталь ${Math.round(p.L)}×${Math.round(p.W)} мм (до края не меньше 10 мм)`);
+      (p.cutouts = p.cutouts || []).push({ kind: c.kind, u0: r1(u0), v0: r1(v0), u1: r1(u1), v1: r1(v1), r: c.r, ...(c.kind !== 'hole' ? { corner: c.corner } : {}) });
     }
   }
 }

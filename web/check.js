@@ -266,7 +266,7 @@ export function checkBuild(spec, P, opts = {}) {
     const cs = p.cutouts || [];
     for (let i = 0; i < cs.length; i++) {
       const c = cs[i], w = c.u1 - c.u0, h = c.v1 - c.v0;
-      if (c.kind === 'notch') { if (w > p.L - 20 || h > p.W - 20) add('error', 'cutout', `${nm(p)}: выемка ${Math.round(w)}×${Math.round(h)} мм съедает деталь ${Math.round(p.L)}×${Math.round(p.W)}`, [p]); }
+      if (c.kind !== 'hole') { if (w > p.L - 20 || h > p.W - 20) add('error', 'cutout', `${nm(p)}: ${c.kind === 'round' ? 'скругление' : c.kind === 'chamfer' ? 'скос' : 'выемка'} ${Math.round(w)}×${Math.round(h)} мм съедает деталь ${Math.round(p.L)}×${Math.round(p.W)}`, [p]); }
       else if (c.u0 < 10 - 0.01 || c.v0 < 10 - 0.01 || c.u1 > p.L - 10 + 0.01 || c.v1 > p.W - 10 + 0.01) add('error', 'cutout', `${nm(p)}: вырез ${Math.round(w)}×${Math.round(h)} мм ближе 10 мм к краю или выходит за деталь`, [p]);
       const near = (u, v, r) => Math.hypot(Math.max(c.u0 - u, 0, u - c.u1), Math.max(c.v0 - v, 0, v - c.v1)) < r + 2;
       for (const ho of p.holes) {

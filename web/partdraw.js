@@ -42,7 +42,16 @@ export function partDrawing(g, { view = 'A', grain = null } = {}) {
     s += rr(mi.frameW - o, mi.frameW - o, g.L - mi.frameW + o, g.W - mi.frameW + o, mi.cornerR, 'fill="none" stroke="#2b6cb0" stroke-width="1.2" stroke-dasharray="7 4"');
     s += rr(mi.frameW, mi.frameW, g.L - mi.frameW, g.W - mi.frameW, mi.cornerR, 'fill="#e8f0fa" stroke="#2b6cb0" stroke-width="1.6"');
   }
-  for (const c of g.cutouts || []) s += rr(c.u0, c.v0, c.u1, c.v1, c.r, 'fill="#f8d7d3" stroke="#c0392b" stroke-width="1.6"');
+  const cutAttrs = 'fill="#f8d7d3" stroke="#c0392b" stroke-width="1.6"';
+  for (const c of g.cutouts || []) {
+    if (c.kind === 'chamfer' || c.kind === 'round') {
+      // срезанная область: угол детали, треугольник (скос) или сектор до дуги (скругление)
+      const cu = c.corner[1] === '1' ? c.u0 : c.u1, cv = c.corner[3] === '1' ? c.v0 : c.v1, du = c.corner[1] === '1' ? 1 : -1, dv = c.corner[3] === '1' ? 1 : -1;
+      const P = (u, v) => `${X(u)} ${Y(v)}`, w = c.u1 - c.u0, h = c.v1 - c.v0;
+      if (c.kind === 'chamfer') s += `<path d="M${P(cu, cv)} L${P(cu + du * w, cv)} L${P(cu, cv + dv * h)} Z" ${cutAttrs}/>`;
+      else s += `<path d="M${P(cu, cv)} L${P(cu + du * c.r, cv)} A${c.r * sc} ${c.r * sc} 0 0 ${(du * dv > 0) !== mirror ? 1 : 0} ${P(cu, cv + dv * c.r)} Z" ${cutAttrs}/>`;
+    } else s += rr(c.u0, c.v0, c.u1, c.v1, c.r, cutAttrs);
+  }
   if (grain) {
     const horiz = grain === 'L', cx = ox + w / 2, cy = padT + h / 2, len = Math.min(horiz ? w : h, 120) / 2;
     const [x1, y1, x2, y2] = horiz ? [cx - len, cy, cx + len, cy] : [cx, cy + len, cx, cy - len];

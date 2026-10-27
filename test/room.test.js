@@ -116,3 +116,18 @@ describe('помещение: остаток стены фальшпанелью
     expect(fillWall(tight).reason).toMatch(/меньше 20|больше/);
   });
 });
+
+describe('помещение: допуск на кривизну стен', () => {
+  it('запас меньше допуска даёт замечание, достаточный и нулевой допуск — нет', () => {
+    const base = normalizeRoom(R({ w: 4000 })), w = rowExtent(buildProject(kitchen(base)), base).u1;
+    const warn = tol => buildProject(kitchen(normalizeRoom(R({ w: Math.round(w) + 5, tol })))).warnings.filter(x => /допуска на кривизну/.test(x));
+    expect(warn(0)).toEqual([]);
+    expect(warn(5)).toEqual([]);
+    expect(warn(20).some(x => /Стена A: запас 5 мм меньше допуска на кривизну 20 мм/.test(x))).toBe(true);
+  });
+  it('нормализация ограничивает допуск', () => {
+    expect(normalizeRoom({ w: 3000, d: 3000, h: 2700, tol: 999 }).tol).toBe(50);
+    expect(normalizeRoom({ w: 3000, d: 3000, h: 2700, tol: -5 }).tol).toBe(0);
+    expect(normalizeRoom({ w: 3000, d: 3000, h: 2700 }).tol).toBe(0);
+  });
+});
