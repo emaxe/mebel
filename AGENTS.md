@@ -47,6 +47,16 @@
 | `web/export-cut.js` | CSV для сервисов раскроя и JSON операций ЧПУ (нейтральные форматы) |
 | `web/dxf.js` | DXF R12: контуры деталей, слои, таблица слоёв (`toDXF` в `export.js` — обёртка) |
 | `web/dims.js` | Размерные линии для 3D и просветы полок (без DOM) |
+| `web/history.js` | Отмена и повтор на JSON-снимках (`createHistory`), без DOM |
+| `web/ui-util.js` | Чистые помощники интерфейса: подписи типов, сводка секции, предикаты по проекту, имя файла выгрузки, даты |
+| `web/exports.js` | Содержимое выгрузок CSV, DXF, раскрой, ЧПУ: `buildExport(kind, ctx)` → `{ name, type, data }`; кнопки и скачивание остаются в `app.js` |
+| `web/version.js` | `APP_VERSION` — версия приложения для интерфейса и титула «Полного пакета» |
+
+## Кухня: поля модуля
+- `P.appliance` (`oven | micro | dishwasher | fridge | hood`): встраиваемая техника в первой секции; допустимые значения по типам — `TYPE_RULES[type].appliances` в `web/rules.js`, габариты ниш — `APPLIANCES` в `web/norms.js`. `normalize` очищает секцию от полок и ящиков. Прибор — `extras` для 3D и позиция фурнитуры категории `appliance`.
+- `P.cornerKit` (`blind | carousel | magic`) у `kcorner`: угловой механизм вместо глухого угла (`web/model-corner.js`).
+- Вырезы столешницы `sink` и `hob` дают покупные приборы (`worktopFixtures` в `web/worktop.js`): 3D, план, список покупок; цвет — `countertop.color`.
+- Все новые значения таких моделей перечислены в `web/verify.js` как не подтверждённые источниками.
 
 ## Экспорт и форматы
 - **CSV:** `;`, UTF-8 BOM
@@ -69,6 +79,9 @@
 ## Релиз и кеш
 - Сервис-воркер работает cache-first: при изменении файлов в `web/` увеличивай версию командой `./run.sh bump`; новые модули добавляй в список `ASSETS` (тест `test/service-worker.test.js` проверяет состав).
 - В проекте есть `P.schema` и `migrate()` в `web/rules.js`: при несовместимом изменении формата проекта поднимай `SCHEMA` и добавляй функцию в `MIGRATIONS`.
+
+## Открытые задачи
+См. `ROADMAP.md`.
 
 ## Разработка
 - Локальный клиент: `./run.sh serve` или `npx serve .` из корня (нужен HTTP-сервер для ES-модулей)

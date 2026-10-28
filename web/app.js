@@ -23,10 +23,12 @@ import { createApi } from './api.js';
 import { createSync } from './sync.js';
 import { initAccount } from './account.js';
 import { createHistory } from './history.js';
+import { APP_VERSION } from './version.js';
 import * as U from './ui-util.js';
 import { buildExport, nestWith, FILE_EXPORTS } from './exports.js';
 const { TYPES, TYPE_INFO, typeLabel, dedupe, partIdOf, keepColorsOf, sectionSummary, fmtDate, sizeOf } = U;
 
+document.getElementById('ver').textContent = 'Версия ' + APP_VERSION;
 const stage = document.querySelector('three-d-stage');
 const { THREE } = await stage.ready;
 

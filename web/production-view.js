@@ -1,6 +1,7 @@
 // Страница «Задание на распил»: расчёт и HTML целиком, без DOM и хранилища — поэтому проверяется в node.
 // Данные для обработчиков (скачивание, отметки «куплено») возвращаются наружу; их вешает production.html.
 import { buildSpec } from './model.js';
+import { APP_VERSION } from './version.js';
 import { buildProject } from './project.js';
 import { planView } from './plan.js';
 import { groupParts, nest, edgeSummary, grainOf } from './export.js';
@@ -197,7 +198,7 @@ export function renderProduction({ P, cat, projName, preview = null, shareToken 
     const toc = [['sec-task', 'Задание на распил и присадку'], ['sec-views', 'Общий вид'], ...(multi || PJ.worktops.length ? [['sec-plan', 'План']] : []), ['sec-mats', 'Сводка материалов'], ['sec-spec', 'Спецификация деталей'], ['sec-cut', 'Карты раскроя'], ['sec-parts', 'Чертежи деталей'],
       ...mods.map(m => [`sec-asm-${m.i}`, `Инструкция по сборке${multi ? `: ${m.name}` : ''}`]), ['sec-buy', 'Список покупок'], ['sec-est', 'Смета'], ['sec-kp', 'Коммерческое предложение'], ['sec-labels', 'Этикетки деталей']];
     const sheets = N.sheets.filter(x => !x.stock).length;
-    const cover = `<section id="sec-cover" class="sheet m-all cover"><h1>${esc(projName)}</h1><div class="muted">${esc(title)} · ${date.toLocaleDateString('ru-RU')}</div>
+    const cover = `<section id="sec-cover" class="sheet m-all cover"><h1>${esc(projName)}</h1><div class="muted">${esc(title)} · ${date.toLocaleDateString('ru-RU')} · конструктор v${APP_VERSION}</div>
     <div class="meta"><div><span>Деталей</span>${G.reduce((a, g) => a + g.qty, 0)} шт., ${G.length} позиций</div><div><span>Листов</span>${sheets}${N.sheets.some(x => x.stock) ? ` + ${N.sheets.filter(x => x.stock).length} ост.` : ''}</div><div><span>Модулей</span>${mods.length}</div><div><span>Итого по смете</span>${rub(EST.total)}</div></div>
     <h2 style="margin-top:20px">Содержание</h2><ol class="toc">${toc.map(([id, t]) => `<li><a href="#${id}">${esc(t)}</a></li>`).join('')}</ol></section>`;
     const barEnd = html.indexOf('</div>') + 6;
