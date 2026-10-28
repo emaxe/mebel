@@ -66,7 +66,7 @@ export function planView(proj, { width = 900 } = {}) {
       else if (o.wall === 'A') s += `<rect x="${X(fr.xOf(o.x))}" y="${Z(rb[2]) - 9}" width="${o.w * sc}" height="6" fill="${col}" data-opening="${o.kind}"/><text x="${X(fr.xOf(o.x + o.w / 2))}" y="${Z(rb[2]) - 13}" text-anchor="middle" font-size="9" fill="#6f6a60">${name} ${fmt(o.w)}</text>`;
       else { const wx = X(wallB) + (fr.corner === 'R' ? 3 : -9); s += `<rect x="${wx}" y="${Z(fr.zOf(o.x))}" width="6" height="${o.w * sc}" fill="${col}" data-opening="${o.kind}"/>`; }
     }
-    s += `<text x="${X(rb[0])}" y="${Z(rb[3]) + 34}" font-size="10" fill="#6f6a60">Помещение ${fmt(room.w)} × ${fmt(room.d)} мм, потолок ${fmt(room.h)}${room.skirt ? `, плинтус ${fmt(room.skirt)}×${fmt(room.skirtT)}` : ''}</text>`;
+    s += `<text x="${X(rb[0])}" y="${Z(rb[3]) + 82}" font-size="10" fill="#6f6a60">Помещение ${fmt(room.w)} × ${fmt(room.d)} мм, потолок ${fmt(room.h)}${room.skirt ? `, плинтус ${fmt(room.skirt)}×${fmt(room.skirtT)}` : ''}</text>`;
   }
   return s + '</svg>';
 }

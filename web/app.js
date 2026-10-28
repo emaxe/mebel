@@ -393,8 +393,8 @@ function overridesEditor() {
     del.title = 'Убрать правило'; del.onclick = () => commit(() => { P.overrides.splice(i, 1); if (!P.overrides.length) delete P.overrides; });
     row.append(pn, sc, dc, ed, del); box.append(row);
   });
-  const add = el('button', '', '+ Правило для детали'); add.disabled = !names().length || !decors().length || (P.overrides || []).length >= 30;
-  add.onclick = () => commit(() => { const d = cat.decors[0]; (P.overrides = P.overrides || []).push({ part: names()[0], sec: 0, decor: d.name, color: d.color }); });
+  const add = el('button', '', '+ Правило для детали'); add.disabled = !decors().length || (P.overrides || []).length >= 30;
+  add.onclick = () => { if (!names().length) { toast('В этом корпусе нет деталей из ЛДСП, для которых можно задать правило'); return; } commit(() => { const d = cat.decors[0]; (P.overrides = P.overrides || []).push({ part: names()[0], sec: 0, decor: d.name, color: d.color }); }); };
   box.append(add);
   return box;
 }
