@@ -19,7 +19,7 @@ export const TYPE_RULES = {
   kcorner: { height: [500, 1000], depth: [300, 700], secW: [600, 1500], maxSec: 1, doors: [], items: [], drawerFronts: 'inset', fills: ['empty'] },
   kfill: { height: [100, 2600], depth: [10, 40], secW: [20, 600], maxSec: 1, doors: [], items: [], drawerFronts: 'inset', fills: ['empty'] },
   kwall: { height: [300, 1000], depth: [200, 450], secW: [150, 1000], maxSec: 3, appliances: ['hood', 'micro'], doors: ['none', 'left', 'right', 'double', 'flapUp'], items: ['shelf', 'fixed', 'glass'], drawerFronts: 'inset', fills: ['shelves1', 'shelves', 'empty'] },
-  ktall: { height: [1800, 2600], depth: [400, 700], secW: [300, 800], maxSec: 2, appliances: ['oven', 'micro', 'fridge'], doors: ['none', 'left', 'right', 'double'], items: ['shelf', 'fixed', 'glass', 'drawer', 'idrawer'], drawerFronts: 'overlay', fills: ['shelves', 'drawersShelves', 'drawers3', 'idrawers', 'empty'] },
+  ktall: { height: [1800, 2600], depth: [400, 700], secW: [300, 800], maxSec: 2, appliances: ['oven', 'micro', 'fridge'], stack: ['oven', 'micro'], doors: ['none', 'left', 'right', 'double'], items: ['shelf', 'fixed', 'glass', 'drawer', 'idrawer'], drawerFronts: 'overlay', fills: ['shelves', 'drawersShelves', 'drawers3', 'idrawers', 'empty'] },
   tv: { height: [300, 700], depth: [300, 550], secW: [300, 1000], maxSec: 4, zone: true, doors: ['none', 'left', 'right', 'double', 'flapDown', 'flapUp'], items: ['shelf', 'fixed', 'glass', 'drawer', 'idrawer'], drawerFronts: 'overlay', fills: ['shelves1', 'shelves', 'drawers2', 'idrawers', 'empty'] },
 };
 export const rulesOf = P => TYPE_RULES[P.type] || TYPE_RULES.wardrobe;
@@ -214,7 +214,14 @@ export function normalize(P) {
     const s0 = P.sections[0];
     s0.items = []; delete s0.zone; delete s0.acc;
     if (P.appliance !== 'dishwasher' && P.appliance !== 'fridge') s0.door = 'none';
-  } else delete P.appliance;
+    const stack = R.stack || [];
+    if (stack.includes(P.appliance)) {
+      P.appliance2 = stack.includes(P.appliance2) && P.appliance2 !== P.appliance ? P.appliance2 : undefined;
+      const y = Number.isFinite(+P.applianceY) && P.applianceY !== '' && P.applianceY !== null ? Math.round(+P.applianceY) : P.appliance === 'micro' ? 1400 : 800;
+      P.applianceY = clamp(y, 0, 2400);
+    } else { delete P.appliance2; delete P.applianceY; }
+    if (P.appliance2 === undefined) delete P.appliance2;
+  } else { delete P.appliance; delete P.appliance2; delete P.applianceY; }
   normalizeModules(P);
   if (P.room || [P, ...(P.modules || []).map(m => m.P)].some(Q => Q.sections.some(s => s.zone))) P.schema = 3; // зоны с колонками-ячейками читают только клиенты схемы 3
   return P;

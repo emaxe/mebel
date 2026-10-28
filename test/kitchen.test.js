@@ -175,3 +175,54 @@ describe('встраиваемая техника в нише', () => {
     }
   });
 });
+
+describe('техника: высота установки, две единицы в нише, вытяжка над варкой', () => {
+  const tall = (o = {}) => { const P = makePreset('ktall'); Object.assign(P, o); return normalize(P); };
+  const box = (spec, label) => spec.extras.find(e => e.name === label && e.s[2] > 10);
+  it('у духовки и СВЧ в пенале есть высота установки, у холодильника и кухонных типов нет', () => {
+    expect(tall({ appliance: 'oven' }).applianceY).toBe(800);
+    expect(tall({ appliance: 'micro' }).applianceY).toBe(1400);
+    expect(tall({ appliance: 'fridge' }).applianceY).toBeUndefined();
+    const P = makePreset('kbase'); P.appliance = 'oven'; P.applianceY = 900;
+    expect(normalize(P).applianceY).toBeUndefined();
+    expect(tall({ appliance: 'oven', applianceY: 99999 }).applianceY).toBe(2400);
+  });
+  it('низ духовки стоит на заданной высоте над полом', () => {
+    const s = buildSpec(tall({ appliance: 'oven', applianceY: 1000 })), e = box(s, 'Духовой шкаф');
+    expect(e.c[1] - e.s[1] / 2).toBeCloseTo(1000, 6);
+    expect(s.warnings).toEqual([]);
+  });
+  it('вторая техника встаёт на первую; одинаковая и лишняя отбрасываются', () => {
+    const P = tall({ appliance: 'oven', appliance2: 'micro' }), s = buildSpec(P), o = box(s, 'Духовой шкаф'), m = box(s, 'Микроволновая печь');
+    expect(m.c[1] - m.s[1] / 2).toBeCloseTo(o.c[1] + o.s[1] / 2, 6);
+    expect(s.hwx.filter(e => e.kind === 'appliance').length).toBe(2);
+    expect(tall({ appliance: 'oven', appliance2: 'oven' }).appliance2).toBeUndefined();
+    expect(tall({ appliance: 'fridge', appliance2: 'micro' }).appliance2).toBeUndefined();
+    expect(tall({ appliance2: 'micro' }).appliance2).toBeUndefined();
+  });
+  it('прибор выше ниши — предупреждение, но внутри корпуса', () => {
+    const s = buildSpec(tall({ appliance: 'oven', applianceY: 2300 }));
+    expect(s.warnings.join('|')).toMatch(/не помещается в нишу/);
+    expect(box(s, 'Духовой шкаф').c[1] + box(s, 'Духовой шкаф').s[1] / 2).toBeLessThanOrEqual(s.meta.yT + 1e-6);
+  });
+  it('вытяжка над варочной панелью: допустимое расстояние и нарушения', async () => {
+    const { addModule, buildProject } = await import('../web/project.js');
+    const run = y => {
+      const r = makePreset('kbase'); r.sections[0].width = 600;
+      const h = makePreset('kwall'); h.appliance = 'hood'; h.sections[0].width = 600;
+      addModule(r, h, { name: 'Вытяжка', over: true, y });
+      r.countertop = { T: 38, front: 30, side: 0, cutouts: [{ kind: 'hob', w: 560, h: 490, x: 20, y: 50, r: 8 }] };
+      return buildProject(normalize(r)).warnings.filter(w => /^Вытяжка/.test(w));
+    };
+    expect(run(1550)).toEqual([]);
+    expect(run(1000).join('|')).toMatch(/меньше 650/);
+    expect(run(2000).join('|')).toMatch(/больше 850/);
+  });
+  it('вытяжка без варочной панели не ругается; расстояние в списке «не подтверждено»', async () => {
+    const { addModule, buildProject } = await import('../web/project.js'), { unverifiedList } = await import('../web/verify.js');
+    const r = makePreset('kbase'), h = makePreset('kwall'); h.appliance = 'hood';
+    addModule(r, h, { name: 'Вытяжка', over: true, y: 1400 });
+    expect(buildProject(normalize(r)).warnings.filter(w => /^Вытяжка/.test(w))).toEqual([]);
+    expect(unverifiedList(normalize(h)).some(u => u.id === 'hood.gap')).toBe(true);
+  });
+});

@@ -497,6 +497,8 @@ const globalDefs = () => {
       { k: 'cornerSide', l: 'Угол', seg: [['left', 'Слева'], ['right', 'Справа']], when: () => P.type === 'kcorner', hint: 'С какой стороны стена второго крыла.' },
       { k: 'cornerKit', l: 'Угловой механизм', sel: [['blind', 'Глухой угол'], ['carousel', 'Карусель 3/4'], ['magic', 'Волшебный уголок']], when: () => P.type === 'kcorner', frame: true, hint: 'Глухой угол — пустой угол за двумя дверями. Карусель — две вращающиеся полки в угловой зоне. Волшебный уголок — две выдвижные корзины за дверью крыла A.' },
       { k: 'appliance', l: 'Техника в нише', sel: [['none', 'Нет'], ...(r.appliances || []).map(k => [k, APPLIANCES[k].label])], when: () => !!r.appliances, rebuild: true, frame: true, hint: 'Встраиваемая техника занимает первую секцию: полки и ящики в ней убираются. Размеры ниши проверяются, прибор попадает в список покупок.' },
+      { k: 'applianceY', l: 'Высота установки, мм от пола', min: 0, max: 2400, step: 10, u: 'мм', when: () => P.applianceY !== undefined, frame: true, hint: 'Низ духовки или микроволновой печи над полом. Часто духовку ставят на уровне груди: низ около 800 мм.' },
+      { k: 'appliance2', l: 'Вторая техника над первой', sel: [['none', 'Нет'], ...(r.stack || []).filter(k => k !== P.appliance).map(k => [k, APPLIANCES[k].label])], when: () => !!(r.stack || []).includes(P.appliance), frame: true, hint: 'Духовка и микроволновая печь в одной нише: вторая ставится прямо на первую.' },
       { k: 'plinthStrip', l: 'Цокольная планка', tog: 1, when: () => P.base === 'legs', hint: 'Планка на клипсах между ножками, утоплена на 50 мм от фасада.' },
       { k: 'railW', l: 'Ширина царги', min: 60, max: 200, step: 10, u: 'мм', when: () => P.topType === 'rails', hint: 'Две царги (передняя и задняя) вместо цельной крышки: под них крепится столешница.' },
       { k: 'topOverhang', l: 'Свес крышки', min: 0, max: 50, step: 1, u: 'мм', when: () => P.topType === 'overlay', hint: 'На сколько крышка выступает вперёд и в стороны.' },
@@ -545,7 +547,7 @@ const viewDefs = () => [
   { nohist: 1, k: 'showHoles', l: 'Показать присадку (отверстия)', tog: 1, hint: 'Цветные маркеры отверстий: Ø35 — чашки петель, Ø7 и Ø5 — конфирматы и полкодержатели.' },
 ];
 function onGlobal(c, live, old) {
-  if (['push', 'handle', 'hinge', 'slide', 'appliance'].includes(c.k)) { normalize(P); drawGlobal(); }
+  if (['push', 'handle', 'hinge', 'slide', 'appliance', 'appliance2'].includes(c.k)) { if (c.k === 'appliance') { delete P.applianceY; delete P.appliance2; } if (P.appliance2 === 'none') delete P.appliance2; normalize(P); drawGlobal(); }
   if (c.scale && P.fit && old !== undefined) fitSections(P, innerH({ ...P, [c.k]: old }), innerH(P), P.fitMode);
   render(!live && (c.frame || c.k === 'cornice'));
   if (c.rebuild || c.scale) drawSections();

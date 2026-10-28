@@ -140,7 +140,7 @@ const FIXTURE_NAME = { sink: 'Мойка кухонная врезная', hob: 
  * Мойка — чаша со смесителем, варочная панель — плита с четырьмя конфорками.
  */
 export function worktopFixtures(parts) {
-  const extras = [], hwx = [];
+  const extras = [], hwx = [], hobs = [];
   for (const p of parts) {
     if (p.name !== 'Столешница') continue;
     const top = p.c[1] + p.T / 2;
@@ -155,11 +155,31 @@ export function worktopFixtures(parts) {
         e({ kind: 'cyl', mat: 'metal', r: 16, len: 240, c: [cx, top + 120, cz - h / 2 + 60], axis: 'y' });
         e({ kind: 'cyl', mat: 'metal', r: 10, len: 150, c: [cx, top + 235, cz - h / 2 + 125], axis: 'z' });
       } else {
+        hobs.push({ x: cx, z: cz, w, h, top });
         e({ kind: 'box', mat: 'dark', s: [w + 20, 6, h + 20], c: [cx, top + 3, cz] });
         for (const [dx, dz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) e({ kind: 'cyl', mat: 'steel', r: Math.min(w, h) * 0.17, len: 1.5, c: [cx + dx * w * 0.24, top + 6.8, cz + dz * h * 0.24], axis: 'y' });
       }
       hwx.push({ kind: 'appliance', name, qty: 1, stage: 'final' });
     }
   }
-  return { extras, hwx };
+  return { extras, hwx, hobs };
+}
+
+export const HOOD_GAP = [650, 850]; // расстояние от варочной панели до низа вытяжки, мм: электрическая плита от 650, газовая от 750
+
+/** Вытяжки над варочными панелями: mods — модули после раскладки, hobs — из worktopFixtures. Только ряд вдоль стены A (без поворота). */
+export function hoodWarnings(mods, hobs) {
+  const out = [], hoods = [];
+  for (const m of mods) {
+    if (m.rot) continue;
+    for (const e of m.spec.extras) if (e.kind === 'box' && e.name === 'Вытяжка' && e.mat === 'steel') hoods.push({ x: m.x + e.c[0], w: e.s[0], bottom: m.y + e.c[1] - e.s[1] / 2 });
+  }
+  for (const hd of hoods) {
+    const hob = hobs.find(h => Math.abs(h.x - hd.x) < (h.w + hd.w) / 2);
+    if (!hob) { if (hobs.length) out.push('Вытяжка: стоит не над варочной панелью'); continue; }
+    const gap = Math.round(hd.bottom - hob.top);
+    if (gap < HOOD_GAP[0]) out.push(`Вытяжка: до варочной панели ${gap} мм, меньше ${HOOD_GAP[0]} мм — поднимите модуль`);
+    else if (gap > HOOD_GAP[1]) out.push(`Вытяжка: до варочной панели ${gap} мм, больше ${HOOD_GAP[1]} мм — опустите модуль`);
+  }
+  return out;
 }

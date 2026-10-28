@@ -54,6 +54,7 @@
 
 ## Кухня: поля модуля
 - `P.appliance` (`oven | micro | dishwasher | fridge | hood`): встраиваемая техника в первой секции; допустимые значения по типам — `TYPE_RULES[type].appliances` в `web/rules.js`, габариты ниш — `APPLIANCES` в `web/norms.js`. `normalize` очищает секцию от полок и ящиков. Прибор — `extras` для 3D и позиция фурнитуры категории `appliance`.
+- `P.applianceY` (мм от пола до низа прибора) и `P.appliance2` (вторая техника, встаёт на первую) — только у `ktall` с духовкой или СВЧ (`TYPE_RULES.ktall.stack`). Вытяжка над варочной панелью проверяется в проекте (`hoodWarnings` в `web/worktop.js`, расстояние 650–850 мм).
 - `P.cornerKit` (`blind | carousel | magic`) у `kcorner`: угловой механизм вместо глухого угла (`web/model-corner.js`).
 - Вырезы столешницы `sink` и `hob` дают покупные приборы (`worktopFixtures` в `web/worktop.js`): 3D, план, список покупок; цвет — `countertop.color`.
 - Все новые значения таких моделей перечислены в `web/verify.js` как не подтверждённые источниками.

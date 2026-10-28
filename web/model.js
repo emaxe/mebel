@@ -400,16 +400,26 @@ export function buildSpec(P, opts = {}) {
   const ctx = { hw: hw_, pierces, setStage: v => { stage = v; }, extra, P, S, W, H, D, t, b, ovTop, sliding, eF, eH, zF, yB, yT, ih, shelfBack, sd, parts, extras, part, hole, addHw, warnings, body };
   addFronts(ctx);
   S.forEach(s => delete s._ctx);
-  const ap = APPLIANCES[P.appliance];
-  if (ap) at('final', () => {
-    const iw = S[0].width, need = ap.h || ap.minH, w = Math.min(ap.w, iw - 4), h = ap.at === 'full' ? ih - 4 : Math.min(ap.h, ih), dd = Math.min(ap.d, zF - shelfBack);
-    if (iw < ap.minW) warnings.push(`${ap.label}: ниша шириной ${iw} мм уже необходимой ${ap.minW} мм`);
-    if (ih < need) warnings.push(`${ap.label}: ниша высотой ${Math.round(ih)} мм ниже необходимой ${need} мм`);
-    if (zF - shelfBack < ap.d) warnings.push(`${ap.label}: глубина ниши ${Math.round(zF - shelfBack)} мм меньше необходимой ${ap.d} мм`);
-    const tall = P.type === 'ktall', y0 = ap.at === 'top' ? (tall ? Math.min(yB + 800, yT - h) : yT - h) : ap.at === 'mid' ? (tall ? Math.min(yB + 1400, yT - h) : yB) : yB, zc = shelfBack + dd / 2, ax = -W / 2 + t + iw / 2;
-    extra({ kind: 'box', mat: ap.mat, nc: true, name: ap.label, s: [w, h, dd], c: [ax, y0 + h / 2, zc], sec: 1 });
-    if (ap.face) extra({ kind: 'box', mat: ap.face, nc: true, name: ap.label, s: [w - 30, h * 0.8, 4], c: [ax, y0 + h / 2, zc + dd / 2 + 1.5], sec: 1 });
-    addHw(ap.hw);
+  const apps = [P.appliance, P.appliance2].filter(k => APPLIANCES[k]);
+  if (apps.length) at('final', () => {
+    const iw = S[0].width, tall = P.type === 'ktall', zc0 = shelfBack, ax = -W / 2 + t + iw / 2;
+    let top = null; // верх предыдущего прибора: второй встаёт на него
+    apps.forEach((k, n) => {
+      const ap = APPLIANCES[k], need = ap.h || ap.minH, w = Math.min(ap.w, iw - 4), h = ap.at === 'full' ? ih - 4 : Math.min(ap.h, ih), dd = Math.min(ap.d, zF - zc0);
+      if (iw < ap.minW) warnings.push(`${ap.label}: ниша шириной ${iw} мм уже необходимой ${ap.minW} мм`);
+      if (ih < need) warnings.push(`${ap.label}: ниша высотой ${Math.round(ih)} мм ниже необходимой ${need} мм`);
+      if (zF - zc0 < ap.d) warnings.push(`${ap.label}: глубина ниши ${Math.round(zF - zc0)} мм меньше необходимой ${ap.d} мм`);
+      let y0;
+      if (n > 0) y0 = top;
+      else if (tall && P.applianceY !== undefined && (ap.at === 'top' || ap.at === 'mid')) y0 = Math.max(yB, P.applianceY);
+      else y0 = ap.at === 'top' ? (tall ? yB + 800 : yT - h) : ap.at === 'mid' ? (tall ? yB + 1400 : yB) : yB;
+      if (y0 + h > yT + 0.01) { if (n > 0 || P.applianceY !== undefined) warnings.push(`${ap.label}: на высоте ${Math.round(y0)} мм прибор не помещается в нишу (верх ниши ${Math.round(yT)} мм)`); y0 = Math.max(yB, yT - h); }
+      top = y0 + h;
+      const zc = zc0 + dd / 2;
+      extra({ kind: 'box', mat: ap.mat, nc: true, name: ap.label, s: [w, h, dd], c: [ax, y0 + h / 2, zc], sec: 1 });
+      if (ap.face) extra({ kind: 'box', mat: ap.face, nc: true, name: ap.label, s: [w - 30, h * 0.8, 4], c: [ax, y0 + h / 2, zc + dd / 2 + 1.5], sec: 1 });
+      addHw(ap.hw);
+    });
   });
   applyCutouts(P, parts, warnings);
   const dowels = [...hw].filter(([k]) => /^Шкант/.test(k)).reduce((a, [, q]) => a + q, 0);

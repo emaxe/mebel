@@ -4,7 +4,7 @@ import { buildSpec } from './model.js';
 import { normalize, MAX_MODULES } from './rules.js';
 import { roomFrame, roomWarnings, rowExtent } from './room.js';
 import { makePreset } from './rules.js';
-import { normalizeWorktop, worktopParts, worktopWarnings, worktopFixtures } from './worktop.js';
+import { normalizeWorktop, worktopParts, worktopWarnings, worktopFixtures, hoodWarnings } from './worktop.js';
 
 const clone = o => JSON.parse(JSON.stringify(o));
 const PRIMARY_KEYS = ['modules', 'modName', 'modY'];
@@ -204,7 +204,7 @@ function buildLayout(root, { hwFor } = {}) {
   if (turn && cornerMod && cornerMod.P.cornerSide !== (turn === 'L' ? 'left' : 'right')) warnings.push(`${cornerMod.name}: угол ${cornerMod.P.cornerSide === 'right' ? 'справа' : 'слева'}, а второй ряд повёрнут ${turn === 'L' ? 'влево' : 'вправо'}: развернитесь в одну сторону`);
   const worktops = worktopParts(mods, wt);
   parts.push(...worktops);
-  const wtWarn = worktopWarnings(worktops), fixtures = worktopFixtures(worktops);
+  const fixtures = worktopFixtures(worktops), wtWarn = [...worktopWarnings(worktops), ...hoodWarnings(mods, fixtures.hobs)];
   warnings.push(...wtWarn);
   const H = Math.max(...mods.map(m => m.y + m.H));
   const spec = {

@@ -36,6 +36,7 @@ export function randomProject(seed) {
   if (P0.backType !== 'none' && r() < 0.3) P0.cutouts = [{ part: 'Задняя стенка', sec: 0, kind: 'hole', w: 60, h: 60, r: 10, u: 150, v: 150, corner: 'w1d1' }]; // кабель-канал в задней стенке
   if (type === 'kcorner' && r() < 0.5) P0.cornerKit = pick(r, ['carousel', 'magic']);
   if (R.appliances && r() < 0.4) P0.appliance = pick(r, R.appliances);
+  if (R.stack && R.stack.includes(P0.appliance) && r() < 0.5) { P0.appliance2 = pick(r, R.stack); P0.applianceY = int(r, 0, 240) * 10; }
   return normalize(P0);
 }
 
