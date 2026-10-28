@@ -15,11 +15,11 @@ export const TYPE_RULES = {
   rack: { height: [600, 2600], depth: [250, 500], secW: [300, 1000], maxSec: 8, zone: true, doors: [], items: ['shelf', 'fixed', 'glass'], drawerFronts: 'inset', fills: ['shelves', 'empty'] },
   nightstand: { height: [400, 800], depth: [300, 550], secW: [300, 800], maxSec: 2, doors: ['none', 'left', 'right', 'flapDown'], items: ['shelf', 'fixed', 'glass', 'drawer', 'idrawer'], drawerFronts: 'overlay', fills: ['drawers2', 'drawers3', 'drawersShelf', 'idrawers', 'shelves', 'empty'] },
   dresser: { height: [600, 1300], depth: [350, 600], secW: [300, 1000], maxSec: 4, zone: true, doors: ['none', 'left', 'right', 'double'], items: ['shelf', 'fixed', 'drawer', 'idrawer'], drawerFronts: 'overlay', fills: ['drawers3', 'drawers4', 'drawers5', 'drawersShelf', 'idrawers', 'shelves', 'empty'] },
-  kbase: { height: [500, 1000], depth: [300, 700], secW: [150, 1000], maxSec: 3, rails: true, doors: ['none', 'left', 'right', 'double'], items: ['shelf', 'fixed', 'glass', 'drawer', 'idrawer'], drawerFronts: 'overlay', fills: ['shelves1', 'shelves', 'drawers3', 'drawers2', 'drawersShelf', 'idrawers', 'empty'] },
+  kbase: { height: [500, 1000], depth: [300, 700], secW: [150, 1000], maxSec: 3, rails: true, appliances: ['oven', 'dishwasher'], doors: ['none', 'left', 'right', 'double'], items: ['shelf', 'fixed', 'glass', 'drawer', 'idrawer'], drawerFronts: 'overlay', fills: ['shelves1', 'shelves', 'drawers3', 'drawers2', 'drawersShelf', 'idrawers', 'empty'] },
   kcorner: { height: [500, 1000], depth: [300, 700], secW: [600, 1500], maxSec: 1, doors: [], items: [], drawerFronts: 'inset', fills: ['empty'] },
   kfill: { height: [100, 2600], depth: [10, 40], secW: [20, 600], maxSec: 1, doors: [], items: [], drawerFronts: 'inset', fills: ['empty'] },
-  kwall: { height: [300, 1000], depth: [200, 450], secW: [150, 1000], maxSec: 3, doors: ['none', 'left', 'right', 'double', 'flapUp'], items: ['shelf', 'fixed', 'glass'], drawerFronts: 'inset', fills: ['shelves1', 'shelves', 'empty'] },
-  ktall: { height: [1800, 2600], depth: [400, 700], secW: [300, 800], maxSec: 2, doors: ['none', 'left', 'right', 'double'], items: ['shelf', 'fixed', 'glass', 'drawer', 'idrawer'], drawerFronts: 'overlay', fills: ['shelves', 'drawersShelves', 'drawers3', 'idrawers', 'empty'] },
+  kwall: { height: [300, 1000], depth: [200, 450], secW: [150, 1000], maxSec: 3, appliances: ['hood', 'micro'], doors: ['none', 'left', 'right', 'double', 'flapUp'], items: ['shelf', 'fixed', 'glass'], drawerFronts: 'inset', fills: ['shelves1', 'shelves', 'empty'] },
+  ktall: { height: [1800, 2600], depth: [400, 700], secW: [300, 800], maxSec: 2, appliances: ['oven', 'micro', 'fridge'], doors: ['none', 'left', 'right', 'double'], items: ['shelf', 'fixed', 'glass', 'drawer', 'idrawer'], drawerFronts: 'overlay', fills: ['shelves', 'drawersShelves', 'drawers3', 'idrawers', 'empty'] },
   tv: { height: [300, 700], depth: [300, 550], secW: [300, 1000], maxSec: 4, zone: true, doors: ['none', 'left', 'right', 'double', 'flapDown', 'flapUp'], items: ['shelf', 'fixed', 'glass', 'drawer', 'idrawer'], drawerFronts: 'overlay', fills: ['shelves1', 'shelves', 'drawers2', 'idrawers', 'empty'] },
 };
 export const rulesOf = P => TYPE_RULES[P.type] || TYPE_RULES.wardrobe;
@@ -210,6 +210,11 @@ export function normalize(P) {
     }
     normalizeZone(s, R, ih, t);
   }
+  if (R.appliances && R.appliances.includes(P.appliance)) {
+    const s0 = P.sections[0];
+    s0.items = []; delete s0.zone; delete s0.acc;
+    if (P.appliance !== 'dishwasher' && P.appliance !== 'fridge') s0.door = 'none';
+  } else delete P.appliance;
   normalizeModules(P);
   if (P.room || [P, ...(P.modules || []).map(m => m.P)].some(Q => Q.sections.some(s => s.zone))) P.schema = 3; // зоны с колонками-ячейками читают только клиенты схемы 3
   return P;

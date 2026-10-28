@@ -34,6 +34,7 @@ export function randomProject(seed) {
   }
   P0.sections = secs;
   if (P0.backType !== 'none' && r() < 0.3) P0.cutouts = [{ part: 'Задняя стенка', sec: 0, kind: 'hole', w: 60, h: 60, r: 10, u: 150, v: 150, corner: 'w1d1' }]; // кабель-канал в задней стенке
+  if (R.appliances && r() < 0.4) P0.appliance = pick(r, R.appliances);
   return normalize(P0);
 }
 

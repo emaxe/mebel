@@ -3,6 +3,7 @@ import { makePreset, normalize, TYPE_RULES, innerH } from '../web/rules.js';
 import { buildSpec } from '../web/model.js';
 import { checkBuild } from '../web/check.js';
 import { groupParts, nest } from '../web/export.js';
+import { APPLIANCES } from '../web/norms.js';
 
 const KITCHEN = ['kbase', 'kwall', 'ktall'];
 const errors = P => checkBuild(buildSpec(P), P, { skipKin: true }).filter(f => f.level === 'error').map(f => f.text);
@@ -123,5 +124,54 @@ describe('узкие фасады с рамкой', () => {
     const P = makePreset('kwall'); P.sections[0].door = 'double'; P.sections[0].frontStyle = 'glass'; normalize(P);
     const spec = buildSpec(P);
     expect(spec.parts.some(p => p.name === 'Стекло фасада')).toBe(true); expect(spec.warnings.some(w => /слишком мал/.test(w))).toBe(false);
+  });
+});
+
+describe('встраиваемая техника в нише', () => {
+  const build = (type, appliance, o = {}) => { const P = makePreset(type); P.appliance = appliance; Object.assign(P, o); const N = normalize(P); return { N, spec: buildSpec(N) }; };
+  it('допустима только для своих типов и убирает наполнение первой секции', () => {
+    expect(build('kbase', 'oven').N.appliance).toBe('oven');
+    expect(build('kbase', 'fridge').N.appliance).toBeUndefined();
+    expect(build('wardrobe', 'oven').N.appliance).toBeUndefined();
+    expect(build('kbase', 'none').N.appliance).toBeUndefined();
+    const { N } = build('kbase', 'oven');
+    expect(N.sections[0].items).toEqual([]);
+    expect(N.sections[0].door).toBe('none');
+  });
+  it('посудомойка и холодильник сохраняют фасад', () => {
+    const P = makePreset('kbase'); P.sections[0].door = 'left'; P.appliance = 'dishwasher';
+    expect(normalize(P).sections[0].door).toBe('left');
+  });
+  it('прибор попадает в 3D (extras) и в список фурнитуры', () => {
+    const { spec } = build('kbase', 'oven');
+    expect(spec.extras.filter(e => e.name === 'Духовой шкаф').length).toBe(2);
+    expect(spec.hwx.find(e => e.kind === 'appliance').name).toBe('Духовой шкаф встраиваемый');
+    expect(spec.warnings).toEqual([]);
+  });
+  it('габариты прибора лежат внутри корпуса', () => {
+    for (const [t, a] of [['kbase', 'oven'], ['kbase', 'dishwasher'], ['ktall', 'oven'], ['ktall', 'micro'], ['ktall', 'fridge'], ['kwall', 'hood'], ['kwall', 'micro']]) {
+      const { spec } = build(t, a), { yB, yT } = spec.meta;
+      for (const e of spec.extras.filter(x => x.name === APPLIANCES[a].label)) {
+        expect(e.c[1] - e.s[1] / 2).toBeGreaterThanOrEqual(yB - 1e-6);
+        expect(e.c[1] + e.s[1] / 2).toBeLessThanOrEqual(yT + 1e-6);
+      }
+    }
+  });
+  it('тесная ниша даёт предупреждения', () => {
+    const P = makePreset('kbase'); P.appliance = 'oven'; P.sections[0].width = 400; P.depth = 400;
+    const w = buildSpec(normalize(P)).warnings.join('|');
+    expect(w).toMatch(/Духовой шкаф: ниша шириной/);
+    expect(w).toMatch(/глубина ниши/);
+  });
+  it('в списке «не подтверждено» и в шаблонах библиотеки', async () => {
+    const { unverifiedList } = await import('../web/verify.js');
+    expect(unverifiedList(build('kbase', 'oven').N).some(u => u.id === 'appliance')).toBe(true);
+    expect(unverifiedList(makePreset('kbase')).some(u => u.id === 'appliance')).toBe(false);
+    const { TEMPLATES, instantiate } = await import('../web/library.js');
+    for (const id of ['k-oven-app', 'k-dishwasher', 't-fridge', 'w-hood']) {
+      const tp = TEMPLATES.find(x => x.id === id);
+      expect(tp, id).toBeTruthy();
+      expect(instantiate(tp).P.appliance).toBeTruthy();
+    }
   });
 });

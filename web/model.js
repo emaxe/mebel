@@ -5,11 +5,11 @@ import { addFronts } from './model-fronts.js';
 import { defaultHw } from './hwparams.js';
 import { buildCorner } from './model-corner.js';
 import { asCell } from './cells.js';
-import { ACCESSORIES } from './norms.js';
+import { ACCESSORIES, APPLIANCES } from './norms.js';
 
 /** Порядок этапов сборки; asm у детали и у extra — ключ этапа. */
 export const STAGES = ['base', 'carcass', 'dividers', 'fixed', 'back', 'top', 'backOverlay', 'cornice', 'shelves', 'rods', 'drawerBox', 'drawers', 'doors', 'flaps', 'handles', 'kupe', 'final'];
-const HW_KINDS = [[/^Конфирмат/, 'confirmat'], [/^Эксцентрик/, 'minifix'], [/^Шкант/, 'dowel'], [/^Полкодержатель/, 'shelfPin'], [/^Штангодержатель/, 'rodHolder'], [/^Штанга/, 'rod'], [/^Петля/, 'hinge'], [/^Направляющие/, 'slide'], [/^Ручка/, 'handle'], [/^Уголок мебельный/, 'bracket'], [/^Опора/, 'leg'], [/^(Саморез|Винт)/, 'screw'], [/^Клей/, 'glue'], [/^Газлифт/, 'gasLift'], [/^Стабилизатор/, 'stay'], [/^Рельс купе/, 'kupeRail'], [/^Профиль купе/, 'kupeProfile'], [/^Ролики/, 'kupeRoller'], [/^Толкатель/, 'pushLatch'], [/^Заглушка/, 'plug'], [/^Навес/, 'hanger'], [/^Клипса/, 'clip'], [/^(Мойка|Варочная панель)/, 'appliance'], [/^Анкер/, 'wallFix'], [/^Дюбель/, 'wallDowel']];
+const HW_KINDS = [[/^Конфирмат/, 'confirmat'], [/^Эксцентрик/, 'minifix'], [/^Шкант/, 'dowel'], [/^Полкодержатель/, 'shelfPin'], [/^Штангодержатель/, 'rodHolder'], [/^Штанга/, 'rod'], [/^Петля/, 'hinge'], [/^Направляющие/, 'slide'], [/^Ручка/, 'handle'], [/^Уголок мебельный/, 'bracket'], [/^Опора/, 'leg'], [/^(Саморез|Винт)/, 'screw'], [/^Клей/, 'glue'], [/^Газлифт/, 'gasLift'], [/^Стабилизатор/, 'stay'], [/^Рельс купе/, 'kupeRail'], [/^Профиль купе/, 'kupeProfile'], [/^Ролики/, 'kupeRoller'], [/^Толкатель/, 'pushLatch'], [/^Заглушка/, 'plug'], [/^Навес/, 'hanger'], [/^Клипса/, 'clip'], [/^(Мойка|Варочная панель|Духовой шкаф|Микроволновая печь|Посудомоечная машина|Холодильник|Вытяжка)/, 'appliance'], [/^Анкер/, 'wallFix'], [/^Дюбель/, 'wallDowel']];
 /** Категория фурнитуры по названию позиции. */
 export const hwKind = name => (HW_KINDS.find(([re]) => re.test(name)) || [0, 'other'])[1];
 /** Drawer with a visible front, or a built-in one hidden behind the section's door. */
@@ -400,6 +400,17 @@ export function buildSpec(P, opts = {}) {
   const ctx = { hw: hw_, pierces, setStage: v => { stage = v; }, extra, P, S, W, H, D, t, b, ovTop, sliding, eF, eH, zF, yB, yT, ih, shelfBack, sd, parts, extras, part, hole, addHw, warnings, body };
   addFronts(ctx);
   S.forEach(s => delete s._ctx);
+  const ap = APPLIANCES[P.appliance];
+  if (ap) at('final', () => {
+    const iw = S[0].width, need = ap.h || ap.minH, w = Math.min(ap.w, iw - 4), h = ap.at === 'full' ? ih - 4 : Math.min(ap.h, ih), dd = Math.min(ap.d, zF - shelfBack);
+    if (iw < ap.minW) warnings.push(`${ap.label}: ниша шириной ${iw} мм уже необходимой ${ap.minW} мм`);
+    if (ih < need) warnings.push(`${ap.label}: ниша высотой ${Math.round(ih)} мм ниже необходимой ${need} мм`);
+    if (zF - shelfBack < ap.d) warnings.push(`${ap.label}: глубина ниши ${Math.round(zF - shelfBack)} мм меньше необходимой ${ap.d} мм`);
+    const tall = P.type === 'ktall', y0 = ap.at === 'top' ? (tall ? Math.min(yB + 800, yT - h) : yT - h) : ap.at === 'mid' ? (tall ? Math.min(yB + 1400, yT - h) : yB) : yB, zc = shelfBack + dd / 2, ax = -W / 2 + t + iw / 2;
+    extra({ kind: 'box', mat: ap.mat, nc: true, name: ap.label, s: [w, h, dd], c: [ax, y0 + h / 2, zc], sec: 1 });
+    if (ap.face) extra({ kind: 'box', mat: ap.face, nc: true, name: ap.label, s: [w - 30, h * 0.8, 4], c: [ax, y0 + h / 2, zc + dd / 2 + 1.5], sec: 1 });
+    addHw(ap.hw);
+  });
   applyCutouts(P, parts, warnings);
   const dowels = [...hw].filter(([k]) => /^Шкант/.test(k)).reduce((a, [, q]) => a + q, 0);
   if (dowels) at('carcass', () => addHw('Клей ПВА столярный, 250 г', Math.ceil(dowels / 200)));

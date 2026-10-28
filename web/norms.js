@@ -88,3 +88,13 @@ export function maxRodSpan(load = DEFAULT_ROD_LOAD, opts = {}) {
   const k = rodDeflection({ L: 1, load, ...opts });
   return (1 / (k * SAG_DIV)) ** (1 / 3);
 }
+
+// ── встраиваемая техника в нише модуля (P.appliance); размеры ниши — ориентиры, у конкретной модели в каталоге свои
+export const APPLIANCES = {
+  oven: { label: 'Духовой шкаф', hw: 'Духовой шкаф встраиваемый', w: 560, minW: 560, h: 590, d: 550, at: 'top', mat: 'steel', face: 'dark', types: ['kbase', 'ktall'] },
+  micro: { label: 'Микроволновая печь', hw: 'Микроволновая печь встраиваемая', w: 560, minW: 560, h: 380, d: 300, at: 'mid', mat: 'steel', face: 'dark', types: ['ktall', 'kwall'] },
+  dishwasher: { label: 'Посудомоечная машина', hw: 'Посудомоечная машина встраиваемая', w: 596, minW: 445, h: 0, minH: 550, d: 550, at: 'full', mat: 'steel', types: ['kbase'] },
+  fridge: { label: 'Холодильник', hw: 'Холодильник встраиваемый', w: 560, minW: 560, h: 1780, d: 550, at: 'bottom', mat: 'steel', face: 'steel', types: ['ktall'] },
+  hood: { label: 'Вытяжка', hw: 'Вытяжка встраиваемая', w: 520, minW: 500, h: 300, d: 300, at: 'bottom', mat: 'steel', types: ['kwall'] },
+};
+export const APPLIANCE_KEYS = Object.keys(APPLIANCES);
