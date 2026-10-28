@@ -204,6 +204,8 @@ menu() {
     printf '  7) Тесты ядра (Vitest)\n'
     printf '  8) Всё: синтаксис + тесты ядра\n'
     printf '  9) Тесты сервера (нужен Docker)\n'
+    printf ' 10) Полная проверка: ядро + сервер (нужен Docker)\n'
+    printf ' 11) Локальный стек с API и БД (нужен Docker)\n'
     printf '  0) Выход\n'
     ask "Выбор: "
     case $REPLY in
@@ -216,6 +218,8 @@ menu() {
       7) do_test ;;
       8) do_all ;;
       9) do_servertest ;;
+      10) do_full ;;
+      11) do_dev ;;
       0|q|Q) exit 0 ;;
       *) warn "Неизвестный пункт" ;;
     esac
