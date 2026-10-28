@@ -1,7 +1,7 @@
 // Снимок buildSpec при параметрах по умолчанию: новые поля ядра не должны менять геометрию, присадку и фурнитуру.
 // Обновить снимок осознанно: npx vitest run -u
 import { describe, it, expect } from 'vitest';
-import { makePreset } from '../web/rules.js';
+import { makePreset, normalize } from '../web/rules.js';
 import { buildSpec } from '../web/model.js';
 
 const strip = spec => ({
@@ -22,4 +22,16 @@ for (const type of TYPES) for (const joint of ['confirmat', 'minifix', 'dowel'])
       expect(strip(buildSpec(P))).toMatchSnapshot();
     });
   }
+}
+
+const KITCHEN = [
+  ['kbase', {}], ['kwall', {}], ['ktall', {}], ['kcorner', {}], ['kfill', {}],
+  ['kbase', { appliance: 'oven' }], ['kbase', { appliance: 'dishwasher' }], ['ktall', { appliance: 'fridge' }], ['kwall', { appliance: 'hood' }],
+  ['kcorner', { cornerKit: 'carousel' }], ['kcorner', { cornerKit: 'magic' }],
+];
+for (const [type, keep] of KITCHEN) {
+  it(`${type} · ${JSON.stringify(keep)}`, () => {
+    const P = makePreset(type, keep);
+    expect(strip(buildSpec(normalize(P)))).toMatchSnapshot();
+  });
 }

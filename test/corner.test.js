@@ -166,3 +166,55 @@ describe('столешница углового модуля', () => {
     expect(worktopRuns(buildProject(r).mods).map(g => g.map(m => m.name))).toEqual([['Корпус 1', 'Угол']]);
   });
 });
+
+describe('угловой механизм (cornerKit)', () => {
+  const kitExtras = s => s.extras.filter(e => ['Стойка карусели', 'Полка карусели', 'Корзина'].includes(e.name));
+  it('по умолчанию — глухой угол без механизма', () => {
+    const P = corner(); expect(P.cornerKit).toBe('blind');
+    expect(kitExtras(buildSpec(P)).length).toBe(0);
+    expect(buildSpec(P).hwx.some(e => e.kind === 'cornerKit')).toBe(false);
+  });
+  it('неизвестное значение и другой тип приводятся к допустимому', () => {
+    expect(corner({ cornerKit: 'zzz' }).cornerKit).toBe('blind');
+    const P = makePreset('kbase'); P.cornerKit = 'carousel';
+    expect(normalize(P).cornerKit).toBeUndefined();
+  });
+  it('карусель: стойка, две полки, фурнитура; крылья 900 без предупреждений', () => {
+    const s = buildSpec(corner({ cornerKit: 'carousel' }));
+    expect(s.extras.filter(e => e.name === 'Полка карусели').length).toBe(2);
+    expect(s.extras.filter(e => e.name === 'Стойка карусели').length).toBe(1);
+    expect(s.hwx.find(e => e.kind === 'cornerKit').name).toMatch(/^Карусель угловая 3\/4/);
+    expect(s.warnings).toEqual([]);
+  });
+  it('карусель в угловой зоне и внутри габарита корпуса', () => {
+    const P = corner({ cornerKit: 'carousel' }), s = buildSpec(P), { A, B, D } = s.meta.corner;
+    for (const e of kitExtras(s)) {
+      const x = e.c[0] + A / 2, z = e.c[2] + B / 2, r = e.r;
+      expect(x - r).toBeGreaterThan(0); expect(x + r).toBeLessThan(D + 1);
+      expect(z - r).toBeGreaterThan(0); expect(z + r).toBeLessThan(D + 1);
+    }
+  });
+  it('волшебный уголок: две корзины за дверью крыла A', () => {
+    const s = buildSpec(corner({ cornerKit: 'magic' })), baskets = s.extras.filter(e => e.name === 'Корзина');
+    expect(baskets.length).toBe(10);
+    expect(s.hwx.find(e => e.kind === 'cornerKit').name).toMatch(/Волшебный уголок/);
+    const { A, D } = s.meta.corner;
+    for (const e of baskets) { const x = e.c[0] + A / 2; expect(x - e.s[0] / 2).toBeGreaterThan(D - 1); expect(x + e.s[0] / 2).toBeLessThan(A + 1); }
+  });
+  it('короткие крылья дают предупреждение', () => {
+    const P = corner({ cornerKit: 'carousel', wingB: 700 });
+    expect(buildSpec(P).warnings.join('|')).toMatch(/короче 800/);
+  });
+  it('зеркальный угол переносит механизм', () => {
+    const l = buildSpec(corner({ cornerKit: 'carousel' }, 'left')), r = buildSpec(corner({ cornerKit: 'carousel' }, 'right'));
+    const pl = l.extras.find(e => e.name === 'Стойка карусели'), pr = r.extras.find(e => e.name === 'Стойка карусели');
+    expect(pr.c[0]).toBeCloseTo(-pl.c[0], 6); expect(pr.c[2]).toBeCloseTo(pl.c[2], 6);
+  });
+  it('механизм в списке покупок и среди непроверенного', async () => {
+    const { shoppingList } = await import('../web/fittings.js'), { unverifiedList } = await import('../web/verify.js');
+    const P = corner({ cornerKit: 'magic' });
+    expect(shoppingList(buildSpec(P), clone(DEFAULT_CATALOG), P).some(l => l.kind === 'cornerKit')).toBe(true);
+    expect(unverifiedList(P).some(u => u.id === 'cornerKit')).toBe(true);
+    expect(unverifiedList(corner()).some(u => u.id === 'cornerKit')).toBe(false);
+  });
+});

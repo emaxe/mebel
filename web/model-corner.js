@@ -5,7 +5,7 @@ import { hingeCount } from './hwparams.js';
 
 const r1 = v => Math.round(v * 10) / 10;
 const cpos = len => (len > 450 ? [50, len / 2, len - 50] : [50, len - 50]);
-const HW_KIND = [[/^Конфирмат/, 'confirmat'], [/^Заглушка/, 'plug'], [/^Петля/, 'hinge'], [/^Опора/, 'leg'], [/^Клипса/, 'clip'], [/^Ручка/, 'handle'], [/^(Саморез|Винт)/, 'screw'], [/^Анкер/, 'wallFix'], [/^Дюбель/, 'wallDowel']];
+const HW_KIND = [[/^Конфирмат/, 'confirmat'], [/^Заглушка/, 'plug'], [/^Петля/, 'hinge'], [/^Опора/, 'leg'], [/^Клипса/, 'clip'], [/^Ручка/, 'handle'], [/^(Саморез|Винт)/, 'screw'], [/^(Карусель|Механизм)/, 'cornerKit'], [/^Анкер/, 'wallFix'], [/^Дюбель/, 'wallDowel']];
 const kindOf = name => (HW_KIND.find(([re]) => re.test(name)) || [0, 'other'])[1];
 
 /** Зеркало по x: угол справа вместо слева. Грани боковин меняются местами, координаты вдоль x переворачиваются. */
@@ -126,6 +126,31 @@ export function buildCorner(P, hw) {
     }
   }
   if (P.wallFix) { stage = 'final'; addHw('Анкерный уголок для крепления к стене', 4); addHw('Саморез 4×16 (уголок к корпусу)', 4); addHw('Дюбель с шурупом 6×60 (в стену)', 4); }
+
+  // угловой механизм вместо глухого угла: карусель в угловой зоне D×D или две выдвижные корзины («волшебный уголок») за дверью крыла A
+  const kit = P.cornerKit;
+  if (kit === 'carousel' || kit === 'magic') {
+    stage = 'final';
+    const iy = b + t, ih = H - b - 2 * t, ex = o => extras.push({ asm: stage, mat: 'metal', sec: 1, nc: true, ...o });
+    if (kit === 'carousel') {
+      const c = D / 2 + 20, r = Math.round(Math.min(D / 2 - 25, 260));
+      if (A < 800 || B < 800) warnings.push(`Карусель 3/4: крылья ${A}×${B} мм короче 800 мм, дверь не раскроется на полный ход`);
+      ex({ kind: 'cyl', name: 'Стойка карусели', r: 20, len: ih, axis: 'y', c: [X(c), iy + ih / 2, Z(c)] });
+      for (const k of [0.22, 0.68]) ex({ kind: 'cyl', name: 'Полка карусели', r, len: 16, axis: 'y', c: [X(c), iy + ih * k, Z(c)] });
+      addHw(`Карусель угловая 3/4 Ø${2 * r} мм (две полки)`);
+    } else {
+      if (wa < 450) warnings.push(`Волшебный уголок: проём двери ${Math.round(wa)} мм уже 450 мм, корзины не выдвинутся`);
+      const tw = Math.max(100, wa - 90), td = Math.max(100, D - bk - 90), cx = X((ax0 + ax1) / 2), cz = Z(bk + 45 + td / 2);
+      for (const k of [0.1, 0.5]) {
+        const y = iy + ih * k;
+        ex({ kind: 'box', name: 'Корзина', s: [tw, 8, td], c: [cx, y, cz] });
+        ex({ kind: 'box', name: 'Корзина', s: [tw, 90, 8], c: [cx, y + 45, cz - td / 2 + 4] });
+        ex({ kind: 'box', name: 'Корзина', s: [tw, 90, 8], c: [cx, y + 45, cz + td / 2 - 4] });
+        for (const sx of [-1, 1]) ex({ kind: 'box', name: 'Корзина', s: [8, 90, td], c: [cx + sx * (tw / 2 - 4), y + 45, cz] });
+      }
+      addHw('Механизм «Волшебный уголок» (две выдвижные корзины)');
+    }
+  }
 
   const spec = {
     parts, extras, hwx: [...hwx.values()], hw: [...hwm.entries()], warnings,

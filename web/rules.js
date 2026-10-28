@@ -188,7 +188,7 @@ export function normalize(P) {
   if (!P.plinthStrip || P.base !== 'legs') delete P.plinthStrip; else P.plinthStrip = true;
   P.rodLoad = clamp(Number.isFinite(+P.rodLoad) ? Math.round(+P.rodLoad) : 20, 5, 60);
   P.shelfLoad = clamp(Number.isFinite(+P.shelfLoad) ? Math.round(+P.shelfLoad) : 80, 20, 250);
-  if (P.type === 'kcorner') { P.wingB = clamp(Number.isFinite(+P.wingB) ? Math.round(+P.wingB) : 900, 600, 1500); P.cornerSide = P.cornerSide === 'right' ? 'right' : 'left'; } else { delete P.wingB; delete P.cornerSide; }
+  if (P.type === 'kcorner') { P.wingB = clamp(Number.isFinite(+P.wingB) ? Math.round(+P.wingB) : 900, 600, 1500); P.cornerSide = P.cornerSide === 'right' ? 'right' : 'left'; P.cornerKit = ['carousel', 'magic'].includes(P.cornerKit) ? P.cornerKit : 'blind'; } else { delete P.wingB; delete P.cornerSide; delete P.cornerKit; }
   P.railW = clamp(Number.isFinite(+P.railW) ? Math.round(+P.railW) : 100, 60, 200);
   P.sections = (P.sections || []).slice(0, R.maxSec);
   if (!P.sections.length) P.sections = [newSection(P)];
