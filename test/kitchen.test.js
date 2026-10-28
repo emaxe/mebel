@@ -226,3 +226,21 @@ describe('техника: высота установки, две единицы
     expect(unverifiedList(normalize(h)).some(u => u.id === 'hood.gap')).toBe(true);
   });
 });
+
+describe('ящик под духовкой и шаблон вытяжки', () => {
+  it('ящик остаётся под духовкой, если хватает высоты, и не пересекается с ней', () => {
+    const P = makePreset('kbase'); P.plinth = 60; P.appliance = 'oven'; const N = normalize(P), it0 = N.sections[0].items;
+    expect(it0.length).toBe(1); expect(it0[0].type).toBe('drawer');
+    const s = buildSpec(N), oven = s.extras.find(e => e.name === 'Духовой шкаф' && e.s[2] > 10);
+    expect(s.meta.yB + it0[0].y + it0[0].h).toBeLessThan(oven.c[1] - oven.s[1] / 2 + 1e-6);
+    expect(s.warnings).toEqual([]);
+  });
+  it('на стандартном нижнем модуле места под ящик нет', () => {
+    const P = makePreset('kbase'); P.appliance = 'oven';
+    expect(normalize(P).sections[0].items).toEqual([]);
+  });
+  it('шаблон вытяжки поднят на 1550 мм и проходит проверку расстояния', async () => {
+    const { TEMPLATES, instantiate } = await import('../web/library.js');
+    expect(instantiate(TEMPLATES.find(t => t.id === 'w-hood')).y).toBe(1550);
+  });
+});

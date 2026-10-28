@@ -117,7 +117,7 @@ export function roundSideEnds(P, r) {
 /** Bring a project to what its type supports: ranges, doors, antresol, items, front mode. Idempotent. */
 import { normalizeWorktop } from './worktop.js';
 import { normalizeRoom } from './room.js';
-import { ACC_KEYS } from './norms.js';
+import { ACC_KEYS, APPLIANCES } from './norms.js';
 export const SCHEMA = 3;
 const MIGRATIONS = [P => P, P => P, P => P];
 export const MAX_MODULES = 12;
@@ -214,6 +214,7 @@ export function normalize(P) {
     const s0 = P.sections[0];
     s0.items = []; delete s0.zone; delete s0.acc;
     if (P.appliance !== 'dishwasher' && P.appliance !== 'fridge') s0.door = 'none';
+    if (P.type === 'kbase' && P.appliance === 'oven') { const dh = Math.floor((ih - APPLIANCES.oven.h - 4) / 10) * 10; if (dh >= MIN_DRAWER_H) s0.items = [{ type: 'drawer', y: 0, h: dh }]; } // под духовкой остаётся ящик, если хватает высоты
     const stack = R.stack || [];
     if (stack.includes(P.appliance)) {
       P.appliance2 = stack.includes(P.appliance2) && P.appliance2 !== P.appliance ? P.appliance2 : undefined;

@@ -874,7 +874,7 @@ async function editWorktop() {
     body.textContent = '';
     const cb = Object.assign(el('input'), { type: 'checkbox', checked: on }), head = el('label', 'wtrow'); cb.onchange = () => { on = cb.checked; draw(); };
     head.append(cb, ' Столешница включена');
-    body.append(head, el('p', 'hint2', 'Лежит на подряд стоящих нижних модулях (без пенала и разрыва больше 100 мм) и считается по погонным метрам. Размеры вырезов считаются от левого и переднего края первой столешницы.'));
+    body.append(head, el('p', 'hint2', 'Лежит на подряд стоящих нижних модулях (без пенала и разрыва больше 100 мм) и считается по погонным метрам. Размеры вырезов считаются от левого и переднего края своей плиты: плит столько, сколько рядов (первая вдоль стены A, вторая и третья в углу); у повёрнутой плиты «от левого края» отсчитывается от стыка с первой.'));
     if (!on) return;
     const row = el('div', 'wtrow'); row.append(lab('Толщина, мм', num(wt, 'T', 16, 60)), lab('Свес спереди, мм', num(wt, 'front', 0, 100)), lab('Свес по бокам, мм', num(wt, 'side', 0, 100))); body.append(row);
     const row2 = el('div', 'wtrow'); row2.append(lab('Бортик, мм (0 — нет)', num(wt, 'skirtH', 0, 150)), lab('Фартук, мм (0 — нет)', num(wt, 'apron', 0, 1000))); body.append(row2, el('p', 'hint2', 'Бортик из материала столешницы стоит у стены (от 20 мм); фартук — панель ХДФ 4 мм над столешницей до навесных шкафов.'));
@@ -882,7 +882,7 @@ async function editWorktop() {
     const row3 = el('div', 'wtrow'); row3.append(lab('Цвет в 3D', colorIn)); body.append(row3);
     body.append(el('h4', '', 'Вырезы'));
     wt.cutouts.forEach((c, i) => {
-      const r = el('div', 'wtcut'); r.append(el('b', '', (CUTOUT_PRESETS[c.kind] || CUTOUT_PRESETS.free).label), lab('Ширина', num(c, 'w', 20, 2000)), lab('Глубина', num(c, 'h', 20, 1000)), lab('От левого края', num(c, 'x', 0, 6000)), lab('От переднего края', num(c, 'y', 0, 1000)), lab('Радиус', num(c, 'r', 0, 100)));
+      const r = el('div', 'wtcut'); r.append(el('b', '', (CUTOUT_PRESETS[c.kind] || CUTOUT_PRESETS.free).label), lab('Плита №', Object.assign(el('input'), { type: 'number', value: (c.run || 0) + 1, min: 1, max: 4, step: 1, onchange() { const v = Math.max(0, Math.min(3, Math.round(+this.value || 1) - 1)); if (v) c.run = v; else delete c.run; draw(); } })), lab('Ширина', num(c, 'w', 20, 2000)), lab('Глубина', num(c, 'h', 20, 1000)), lab('От левого края', num(c, 'x', 0, 6000)), lab('От переднего края', num(c, 'y', 0, 1000)), lab('Радиус', num(c, 'r', 0, 100)));
       const del = el('button', '', '×'); del.title = 'Убрать вырез'; del.onclick = () => { wt.cutouts.splice(i, 1); draw(); }; r.append(del); body.append(r);
     });
     const add = el('div', 'wtrow');

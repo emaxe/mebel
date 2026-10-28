@@ -23,6 +23,7 @@ export function normalizeWorktop(w) {
       kind: typeof c.kind === 'string' && CUTOUT_PRESETS[c.kind] ? c.kind : 'free',
       w: clamp(Math.round(num(c.w, 100)), 20, 2000), h: clamp(Math.round(num(c.h, 100)), 20, 1000),
       x: clamp(Math.round(num(c.x, 0)), 0, 6000), y: clamp(Math.round(num(c.y, 30)), 0, 1000), r: clamp(Math.round(num(c.r, 0)), 0, 100),
+      ...(num(c.run, 0) >= 1 ? { run: clamp(Math.round(num(c.run, 0)), 1, 3) } : {}),
     })),
   };
   if (typeof w.color === 'string' && /^#[0-9a-f]{6}$/i.test(w.color)) out.color = w.color;
@@ -48,19 +49,23 @@ export function worktopRuns(mods) {
 export function worktopParts(mods, wt) {
   if (!wt) return [];
   const parts = [], runs = worktopRuns(mods), frontEdge = {}, hasTurned = runs.some(r => r[0].run === 1), dEff = m => (m.spec.meta.corner ? m.spec.meta.corner.D : m.D);
+  const cutsOf = ri => wt.cutouts.filter(k => (k.run || 0) === ri);
   runs.forEach((run, ri) => {
     const turned = run[0].run === 1, yTop = Math.max(...run.map(m => m.y + m.H)), depth = Math.max(...run.map(dEff)) + wt.front;
-    let c, L, W, cuts = [], wall;
+    let c, L, W, cuts = [], wall, back;
     if (!turned) {
       const far = run[0].run === 2, sg = far ? -1 : 1;
       let left = Math.min(...run.map(m => m.x - m.W / 2)) - wt.side, right = Math.max(...run.map(m => m.x + m.W / 2)) + wt.side;
       const zBack = far ? Math.max(...run.map(m => m.z + m.D / 2)) : Math.min(...run.map(m => m.z - m.D / 2));
       if (far && frontEdge.x !== undefined) { if (frontEdge.dir > 0) left = Math.max(left, frontEdge.x); else right = Math.min(right, frontEdge.x); }
       L = right - left; W = depth; c = [(left + right) / 2, yTop + wt.T / 2, zBack + (sg * depth) / 2];
+      back = [0, sg];
       wall = { axis: 'x', a0: left + wt.side, a1: right - wt.side, at: zBack, sign: sg };
       if (!far) frontEdge.z = Math.max(frontEdge.z ?? -Infinity, zBack + depth);
-      if (ri === 0) for (const k of wt.cutouts) {
-        const u0 = clamp(k.x, 0, Math.max(0, L - 10)), u1 = Math.min(L, u0 + k.w), v1 = clamp(depth - k.y, 10, depth), v0 = Math.max(0, v1 - k.h);
+      for (const k of cutsOf(ri)) {
+        const u0 = clamp(k.x, 0, Math.max(0, L - 10)), u1 = Math.min(L, u0 + k.w);
+        let v0, v1;
+        if (far) { v0 = clamp(k.y, 0, depth - 10); v1 = Math.min(depth, v0 + k.h); } else { v1 = clamp(depth - k.y, 10, depth); v0 = Math.max(0, v1 - k.h); }
         if (u1 - u0 >= 10 && v1 - v0 >= 10) cuts.push({ kind: 'hole', fixture: k.kind, u0, v0, u1, v1, r: Math.min(k.r, (u1 - u0) / 2, (v1 - v0) / 2), what: CUTOUT_PRESETS[k.kind].label });
       }
     } else {
@@ -70,12 +75,18 @@ export function worktopParts(mods, wt) {
       const xBack = right ? Math.max(...run.map(m => m.x + m.D / 2)) : Math.min(...run.map(m => m.x - m.D / 2));
       L = depth; W = zEnd - zStart;
       c = [right ? xBack - depth / 2 : xBack + depth / 2, yTop + wt.T / 2, (zStart + zEnd) / 2];
+      back = [right ? 1 : -1, 0];
       wall = { axis: 'z', a0: Math.min(...run.map(m => m.z - m.W / 2)), a1: zEnd - wt.side, at: xBack, sign: right ? -1 : 1 };
       frontEdge.x = right ? xBack - depth : xBack + depth; frontEdge.dir = right ? -1 : 1;
+      for (const k of cutsOf(ri)) {
+        const v0 = clamp(k.x, 0, Math.max(0, W - 10)), v1 = Math.min(W, v0 + k.w);
+        const u0 = right ? clamp(k.y, 0, depth - 10) : Math.max(0, clamp(depth - k.y, 10, depth) - k.h), u1 = right ? Math.min(depth, u0 + k.h) : clamp(depth - k.y, 10, depth);
+        if (v1 - v0 >= 10 && u1 - u0 >= 10) cuts.push({ kind: 'hole', fixture: k.kind, u0, v0, u1, v1, r: Math.min(k.r, (u1 - u0) / 2, (v1 - v0) / 2), what: CUTOUT_PRESETS[k.kind].label });
+      }
     }
     if (W < 20 || L < 20) return;
     const p = {
-      kind: 'panel', mat: 'top', label: `Столешница ${wt.T} мм`, T: wt.T, name: 'Столешница', plane: 'xz', L, W, c,
+      kind: 'panel', mat: 'top', label: `Столешница ${wt.T} мм`, T: wt.T, name: 'Столешница', plane: 'xz', L, W, c, back,
       holes: [], grooves: [], sec: 0, asm: 'final', edges: {},
       notes: [`свес спереди ${wt.front} мм, по бокам ${wt.side} мм`, 'торцы закрыть торцевой планкой, стык со стеной — плинтус или герметик'],
     };
@@ -88,7 +99,7 @@ export function worktopParts(mods, wt) {
     if (cm) {
       const B = cm.D, left = cm.P.cornerSide !== 'right', wallX = left ? cm.x - cm.W / 2 : cm.x + cm.W / 2, zBack = cm.z - cm.D / 2, zStart = zBack + depth, zEnd = zBack + B;
       if (zEnd - zStart >= 20) {
-        const q = { ...p, L: depth, W: zEnd - zStart, c: [left ? wallX + depth / 2 : wallX - depth / 2, yTop + wt.T / 2, (zStart + zEnd) / 2], notes: [...p.notes.filter(n => !/вырез/.test(n)), 'крыло B углового модуля: стык с первой столешницей встык под 90°, стяжка столешничными стяжками'] };
+        const q = { ...p, back: [left ? -1 : 1, 0], L: depth, W: zEnd - zStart, c: [left ? wallX + depth / 2 : wallX - depth / 2, yTop + wt.T / 2, (zStart + zEnd) / 2], notes: [...p.notes.filter(n => !/вырез/.test(n)), 'крыло B углового модуля: стык с первой столешницей встык под 90°, стяжка столешничными стяжками'] };
         delete q.cutouts;
         parts.push(q);
       }
@@ -152,8 +163,9 @@ export function worktopFixtures(parts) {
       if (c.fixture === 'sink') {
         const bowl = Math.min(180, p.T + 140);
         e({ kind: 'box', mat: 'steel', s: [w - 30, bowl, h - 30], c: [cx, top - 12 - bowl / 2, cz] });
-        e({ kind: 'cyl', mat: 'metal', r: 16, len: 240, c: [cx, top + 120, cz - h / 2 + 60], axis: 'y' });
-        e({ kind: 'cyl', mat: 'metal', r: 10, len: 150, c: [cx, top + 235, cz - h / 2 + 125], axis: 'z' });
+        const [bx, bz] = p.back || [0, -1];
+        e({ kind: 'cyl', mat: 'metal', r: 16, len: 240, c: [cx + bx * (w / 2 - 60), top + 120, cz + bz * (h / 2 - 60)], axis: 'y' });
+        e({ kind: 'cyl', mat: 'metal', r: 10, len: 150, c: [cx + bx * (w / 2 - 125), top + 235, cz + bz * (h / 2 - 125)], axis: bx ? 'x' : 'z' });
       } else {
         hobs.push({ x: cx, z: cz, w, h, top });
         e({ kind: 'box', mat: 'dark', s: [w + 20, 6, h + 20], c: [cx, top + 3, cz] });
@@ -167,15 +179,18 @@ export function worktopFixtures(parts) {
 
 export const HOOD_GAP = [650, 850]; // расстояние от варочной панели до низа вытяжки, мм: электрическая плита от 650, газовая от 750
 
-/** Вытяжки над варочными панелями: mods — модули после раскладки, hobs — из worktopFixtures. Только ряд вдоль стены A (без поворота). */
+/** Вытяжки над варочными панелями: mods — модули после раскладки, hobs — из worktopFixtures. Любой ряд: положение вытяжки пересчитывается с учётом поворота модуля. */
 export function hoodWarnings(mods, hobs) {
   const out = [], hoods = [];
   for (const m of mods) {
-    if (m.rot) continue;
-    for (const e of m.spec.extras) if (e.kind === 'box' && e.name === 'Вытяжка' && e.mat === 'steel') hoods.push({ x: m.x + e.c[0], w: e.s[0], bottom: m.y + e.c[1] - e.s[1] / 2 });
+    const rot = m.rot || 0, cs = Math.cos(rot), sn = Math.sin(rot), turned = Math.abs(sn) > 0.5;
+    for (const e of m.spec.extras) {
+      if (e.kind !== 'box' || e.name !== 'Вытяжка' || e.mat !== 'steel') continue;
+      hoods.push({ x: m.x + e.c[0] * cs + e.c[2] * sn, z: m.z - e.c[0] * sn + e.c[2] * cs, w: turned ? e.s[2] : e.s[0], d: turned ? e.s[0] : e.s[2], bottom: m.y + e.c[1] - e.s[1] / 2 });
+    }
   }
   for (const hd of hoods) {
-    const hob = hobs.find(h => Math.abs(h.x - hd.x) < (h.w + hd.w) / 2);
+    const hob = hobs.find(h => Math.abs(h.x - hd.x) < (h.w + hd.w) / 2 && Math.abs(h.z - hd.z) < (h.h + hd.d) / 2);
     if (!hob) { if (hobs.length) out.push('Вытяжка: стоит не над варочной панелью'); continue; }
     const gap = Math.round(hd.bottom - hob.top);
     if (gap < HOOD_GAP[0]) out.push(`Вытяжка: до варочной панели ${gap} мм, меньше ${HOOD_GAP[0]} мм — поднимите модуль`);

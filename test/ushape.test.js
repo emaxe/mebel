@@ -72,3 +72,40 @@ describe('П-образная кухня: третий ряд', () => {
     expect(roomFrame(p, normalizeRoom({ w: 3000, d: 3000, h: 2700 })).hasC).toBe(false);
   });
 });
+
+describe('вырезы на столешницах второго и третьего ряда', () => {
+  const hob = (run, o = {}) => ({ kind: 'hob', w: 560, h: 490, x: 40, y: 50, r: 8, ...(run ? { run } : {}), ...o });
+  const plates = (turn, cuts) => { const r = ukitchen(turn); r.countertop = { ...r.countertop, cutouts: cuts }; return buildProject(normalize(r)).spec.parts.filter(p => p.name === 'Столешница'); };
+  for (const turn of ['L', 'R']) for (const run of [0, 1, 2]) {
+    it(`${turn}: вырез на плите ${run + 1} только на ней, по краям и на расстоянии y от лицевой кромки`, () => {
+      const ps = plates(turn, [hob(run)]);
+      ps.forEach((p, i) => expect((p.cutouts || []).length).toBe(i === run ? 1 : 0));
+      const p = ps[run], c = p.cutouts[0], x0 = p.c[0] - p.L / 2, z0 = p.c[2] - p.W / 2;
+      expect(c.u0).toBeGreaterThanOrEqual(0); expect(c.u1).toBeLessThanOrEqual(p.L + 1e-6);
+      expect(c.v0).toBeGreaterThanOrEqual(0); expect(c.v1).toBeLessThanOrEqual(p.W + 1e-6);
+      const back = p.back, depth = back[0] ? p.L : p.W, h = back[0] ? c.u1 - c.u0 : c.v1 - c.v0;
+      const fromBack = back[0] ? (back[0] < 0 ? c.u0 : p.L - c.u1) : (back[1] < 0 ? c.v0 : p.W - c.v1);
+      expect(depth - fromBack - h).toBeCloseTo(50, 6);
+      expect(x0 + c.u0).toBeDefined(); expect(z0 + c.v0).toBeDefined();
+    });
+  }
+  it('вытяжка над варкой в повёрнутом ряду: расстояние проверяется', () => {
+    const run = y => {
+      const r = ukitchen('L', true), list = moduleList(r), b1 = list.find(m => m.name === 'B1');
+      const h = makePreset('kwall'); h.appliance = 'hood'; h.sections[0].width = 600;
+      addModule(r, h, { name: 'Вытяжка', over: true, y, after: b1.i });
+      r.countertop = { ...r.countertop, cutouts: [hob(1)] };
+      return buildProject(normalize(r)).warnings.filter(w => /^Вытяжка/.test(w));
+    };
+    expect(run(1550)).toEqual([]);
+    expect(run(1000).join('|')).toMatch(/меньше 650/);
+  });
+  it('смеситель мойки стоит у стены своей плиты', () => {
+    for (const turn of ['L', 'R']) for (const run of [0, 1, 2]) {
+      const r = ukitchen(turn); r.countertop = { ...r.countertop, cutouts: [{ kind: 'sink', w: 500, h: 400, x: 40, y: 60, r: 20, ...(run ? { run } : {}) }] };
+      const pr = buildProject(normalize(r)), p = pr.spec.parts.filter(q => q.name === 'Столешница')[run], f = pr.fixtures.extras.find(e => e.kind === 'cyl' && e.r === 16);
+      const [bx, bz] = p.back, dist = bx ? Math.abs(f.c[0] - (p.c[0] + bx * p.L / 2)) : Math.abs(f.c[2] - (p.c[2] + bz * p.W / 2));
+      expect(dist, `${turn}${run}`).toBeLessThan(200);
+    }
+  });
+});

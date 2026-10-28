@@ -16,7 +16,7 @@ export const TEMPLATES = [
   tpl('k-oven-app', 'Нижний с духовкой', 'Шкаф 600 мм с нишей под встраиваемый духовой шкаф', 'kbase', P => { sec(P, { width: 600, door: 'none', items: [] }); P.appliance = 'oven'; }),
   tpl('k-dishwasher', 'Нижний под посудомойку 600', 'Ниша 600 мм под встраиваемую посудомоечную машину с фасадом', 'kbase', P => { sec(P, { width: 600, door: 'left', items: [] }); P.appliance = 'dishwasher'; }),
   tpl('t-fridge', 'Пенал под холодильник', 'Ниша 560 мм под встраиваемый холодильник с фасадом', 'ktall', P => { sec(P, { width: 600, door: 'left', items: [] }); P.appliance = 'fridge'; }),
-  tpl('w-hood', 'Верхний под вытяжку', 'Навесной модуль 600 мм со встроенной вытяжкой', 'kwall', P => { sec(P, { width: 600, door: 'none', items: [] }); P.appliance = 'hood'; }, { over: true, y: 1400 }),
+  tpl('w-hood', 'Верхний под вытяжку', 'Навесной модуль 600 мм со встроенной вытяжкой', 'kwall', P => { sec(P, { width: 600, door: 'none', items: [] }); P.appliance = 'hood'; }, { over: true, y: 1550 }),
   tpl('k-shelves', 'Нижний с полкой', 'Шкаф 600 мм с дверью и одной полкой', 'kbase', P => sec(P, { width: 600, door: 'left' })),
   tpl('w-door2', 'Верхний: две двери', 'Навесной шкаф 800 мм с двумя дверями и полкой', 'kwall', P => sec(P, { width: 800, door: 'double' }), { over: true, y: 1400 }),
   tpl('w-lift', 'Верхний с подъёмным фасадом', 'Навесной шкаф 800 мм с фасадом на подъёмнике', 'kwall', P => sec(P, { width: 800, door: 'flapUp' }), { over: true, y: 1400 }),
