@@ -7,7 +7,8 @@ describe('меню экспорта', () => {
   const html = read('index.html'), app = read('app.js');
   const buttons = [...new Set([...html.matchAll(/data-x="([^"]+)"/g)].map(m => m[1]))];
   const block = app.slice(app.indexOf('const EXPORTS = {'), app.indexOf('document.querySelectorAll(\'[data-x]\')'));
-  const handlers = new Set([...block.matchAll(/^\s{2}(\w+):/gm)].map(m => m[1]));
+  const files = read('exports.js').match(/FILE_EXPORTS = \[([^\]]+)\]/)[1].match(/\w+/g);
+  const handlers = new Set([...block.matchAll(/^\s{2}(\w+):/gm)].map(m => m[1]).concat(files));
 
   it('у каждой кнопки есть обработчик', () => {
     expect(buttons.filter(b => !handlers.has(b))).toEqual([]);

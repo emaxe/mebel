@@ -1,8 +1,6 @@
 import { buildSpec, isDrawer } from './model.js';
 import { build3DProject } from './build3d.js';
-import { toCSV, toDXF, groupParts, nest, partKey, sawSize } from './export.js';
-import { toCutCSV, toDrillJSON } from './export-cut.js';
-import { nestMapDXF } from './dxf.js';
+import { groupParts, partKey, sawSize } from './export.js';
 import { checkBuild, panelIssues } from './check.js';
 import { assemblySteps } from './assembly.js';
 import { modelsFor, selKey, variantOf, resolveHw, KIND_LABELS } from './fittings.js';
@@ -18,12 +16,16 @@ import { zonesOf } from './cells.js';
 import { ACC_KEYS, ACCESSORIES } from './norms.js';
 import { unverifiedProject } from './verify.js';
 import { TEMPLATES, libraryEntry, instantiate, MAX_LIBRARY } from './library.js';
-import { loadCatalog, saveCatalog, sanitizeCatalog, sheetFor, isTextured, DEFAULT_CATALOG, CATALOG_KEY, catalogHooks } from './catalog.js';
+import { loadCatalog, saveCatalog, sanitizeCatalog, DEFAULT_CATALOG, CATALOG_KEY, catalogHooks } from './catalog.js';
 import { loadProjects, saveProjects, newId, uniqueName, projectFile, parseProjectFile, hooks, PROJECTS_KEY, CURRENT_KEY, LEGACY_KEY, NAME_KEY } from './projects.js';
 import { putThumb, getThumb, getLocalThumb, delThumb, setRemote } from './thumbs.js';
 import { createApi } from './api.js';
 import { createSync } from './sync.js';
 import { initAccount } from './account.js';
+import { createHistory } from './history.js';
+import * as U from './ui-util.js';
+import { buildExport, nestWith, FILE_EXPORTS } from './exports.js';
+const { TYPES, TYPE_INFO, typeLabel, dedupe, partIdOf, keepColorsOf, sectionSummary, fmtDate, sizeOf } = U;
 
 const stage = document.querySelector('three-d-stage');
 const { THREE } = await stage.ready;
@@ -32,7 +34,6 @@ let cat = loadCatalog();
 const woods = () => cat.decors.map(d => [d.name, d.color]);
 const METAL = [['Хром', '#c8ccd0'], ['Латунь', '#c9a25a'], ['Чёрный', '#2a2a2a']];
 const STYLES = [['flat', 'Гладкий'], ['shaker', 'Рамочный'], ['mirror', 'Зеркало'], ['glass', 'Стекло']];
-const TYPES = [['wardrobe', 'Шкаф'], ['rack', 'Стеллаж'], ['nightstand', 'Тумба'], ['dresser', 'Комод'], ['tv', 'ТВ-тумба'], ['kbase', 'Кухня: нижний модуль'], ['kwall', 'Кухня: верхний модуль'], ['kfill', 'Кухня: фальшпанель'], ['kcorner', 'Кухня: угловой модуль'], ['ktall', 'Кухня: пенал']];
 
 // ── проекты: список в localStorage, текущий дублируется в 'mebel-v3' для production.html
 let { db, cur } = loadProjects();
@@ -61,22 +62,19 @@ addEventListener('pagehide', () => { if (pendingSave) save(); });
 document.addEventListener('visibilitychange', () => { if (document.hidden && pendingSave) save(); });
 
 // ── отмена и повтор: каждая правка — один шаг (перетаскивание ползунка тоже один); параметры вида (открыть двери и т. п.) не записываются
-const hist = [], redoSt = [];
-let editing = null;
+const history = createHistory({ limit: 60 });
 const undoBtn = document.getElementById('undo'), redoBtn = document.getElementById('redo');
-const syncUndo = () => { undoBtn.disabled = !hist.length; redoBtn.disabled = !redoSt.length; };
-const stack = (a, j) => { a.push(j); if (a.length > 60) a.shift(); };
-/** Запомнить состояние до правки (один раз за жест); endEdit убирает запись, если ничего не изменилось. */
-const beginEdit = () => { if (editing === null) { editing = JSON.stringify(root); stack(hist, editing); redoSt.length = 0; syncUndo(); } };
-const endEdit = () => { if (editing === null) return; if (JSON.stringify(root) === editing) hist.pop(); editing = null; syncUndo(); };
-const snap = () => { stack(hist, JSON.stringify(root)); redoSt.length = 0; syncUndo(); };
+const syncUndo = () => { undoBtn.disabled = !history.canUndo; redoBtn.disabled = !history.canRedo; };
+const beginEdit = () => { history.begin(JSON.stringify(root)); syncUndo(); };
+const endEdit = () => { history.end(JSON.stringify(root)); syncUndo(); };
+const snap = () => { history.snap(JSON.stringify(root)); syncUndo(); };
 const restore = j => {
   const keep = { open: root.open, hideDoors: root.hideDoors, showHoles: root.showHoles, asmStep: root.asmStep };
   root = normalize({ ...JSON.parse(j), ...keep }); active = Math.min(active, moduleCount(root) - 1); P = cabinetOf(root, active); sel = Math.min(sel, P.sections.length - 1); kinKey = ''; selPartKey = null;
   drawAll(); render(true); syncUndo();
 };
-const undo = () => { const j = hist.pop(); if (!j) return; stack(redoSt, JSON.stringify(root)); restore(j); };
-const redo = () => { const j = redoSt.pop(); if (!j) return; stack(hist, JSON.stringify(root)); restore(j); };
+const undo = () => { const j = history.undo(JSON.stringify(root)); if (j !== null) restore(j); };
+const redo = () => { const j = history.redo(JSON.stringify(root)); if (j !== null) restore(j); };
 undoBtn.onclick = undo; redoBtn.onclick = redo;
 const act = fn => (...a) => { beginEdit(); try { fn(...a); } finally { endEdit(); } };
 addEventListener('keydown', e => {
@@ -116,24 +114,20 @@ addEventListener('keydown', e => {
 
 // what the current project actually contains: controls for absent things are hidden
 const R = () => rulesOf(P);
-const hinged = () => P.doorType !== 'sliding';
-const items = () => P.sections.flatMap(s => s.items);
-const hasDrawers = () => items().some(i => isDrawer(i.type));
-const hasHingedDoors = () => hinged() && P.sections.some(s => s.door !== 'none');
-const hasDoors = () => hasHingedDoors() || P.doorType === 'sliding';
-const hasShelves = () => items().some(i => i.type === 'shelf' || i.type === 'glass');
-const hasMoving = () => hasDoors() || hasDrawers();
+const hinged = () => U.hinged(P);
+const items = () => U.itemsOf(P);
+const hasDrawers = () => U.hasDrawers(P);
+const hasHingedDoors = () => U.hasHingedDoors(P);
+const hasDoors = () => U.hasDoors(P);
+const hasShelves = () => U.hasShelves(P);
+const hasMoving = () => U.hasMoving(P);
 
 // ── kinematic warnings: what stops when everything is opened (cached until the construction changes)
 // раскрой нужен панели, чтобы сказать «деталь не помещается на лист» (листы и обрезка — из справочника)
-const nestFor = spec => nest(groupParts(spec), { sheetFor: (l, T) => sheetFor(cat, l, T), textured: l => isTextured(cat, l), kerf: cat.cut.kerf, trim: cat.cut.trim, minOffcut: cat.cut.minOffcut, stock: cat.stock });
+const nestFor = spec => nestWith(spec, cat);
 let kinKey = '', kinWarn = [], buildIssues = [], fixNote = null;
-/** Одинаковые строки сворачиваются в одну с числом повторов: «… (×3)». */
-const dedupe = list => { const m = new Map(); for (const t of list) m.set(t, (m.get(t) || 0) + 1); return [...m].map(([t, n]) => (n > 1 ? `${t} (×${n})` : t)); };
-/** Ключ конструкции: что не влияет на панель замечаний (вид и цвета), в него не входит. */
-const panelKey = () => { const { open, hideDoors, showHoles, asmStep, bodyColor, bodyName, frontColor, frontName, metalColor, ...rest } = P; return JSON.stringify(rest); };
 function kinematicWarnings() {
-  const key = panelKey();
+  const key = U.panelKey(P);
   if (key === kinKey) return kinWarn;
   kinKey = key;
   kinWarn = dedupe(kinProblems(spec).map(k => k.text));
@@ -156,7 +150,7 @@ async function fixAll() {
 
 let panelTimer = 0, panelNote = null;
 function renderWarn(full) {
-  const w = document.getElementById('warn'), ready = full || panelKey() === kinKey;
+  const w = document.getElementById('warn'), ready = full || U.panelKey(P) === kinKey;
   const calc = ready ? kinematicWarnings() : [], issues = ready ? buildIssues : [];
   const others = proj ? dedupe([...(proj.multi ? proj.mods.filter(m => m.i !== active).flatMap(m => m.spec.warnings.map(w => `${m.name}: ${w}`)) : []), ...(proj.warnings || [])]) : [];
   const all = [...dedupe(spec.warnings), ...calc], note = panelNote;
@@ -211,7 +205,6 @@ function render(frame) {
   document.querySelectorAll('[data-when]').forEach(e => (e.style.display = e._when() ? '' : 'none'));
   highlight();
 }
-const partIdOf = p => (p.item !== undefined ? `item|${p.sec}|${p.item}` : `${p.name}|${p.sec}|${p.c.map(v => Math.round(v)).join(',')}`);
 const partCard = document.getElementById('partcard');
 function hidePartCard() { partCard.hidden = true; partCard.textContent = ''; }
 function showPartCard(p) {
@@ -603,16 +596,6 @@ function scheme(s, H) {
   const ti = document.createElementNS(NS, 'title'); ti.textContent = 'Схема секции: полки, штанги и ящики по высоте (пунктир — встроенные ящики за дверью, оранжевая линия — дверь)'; svg.prepend(ti);
   return svg;
 }
-function sectionSummary(s) {
-  const c = t => s.items.filter(i => i.type === t).length, parts = [`${s.width} мм`];
-  if (hinged()) parts.push({ none: 'без двери', left: 'дверь левая', right: 'дверь правая', double: 'двойная дверь', flapDown: 'откидная дверь', flapUp: 'подъёмная дверь' }[s.door]);
-  const sh = c('shelf') + c('glass') + c('fixed'); if (sh) parts.push(`полок: ${sh}`);
-  if (c('rod')) parts.push(`штанг: ${c('rod')}`);
-  if (c('drawer')) parts.push(`ящиков: ${c('drawer')}`);
-  if (s.zone) parts.push(`зона ${s.zone.pos === 'top' ? 'вверху' : 'внизу'} ${s.zone.h} мм`);
-  if (c('idrawer')) parts.push(`встроенных: ${c('idrawer')}`);
-  return parts.join(' · ');
-}
 
 // деление секции по высоте: внизу или вверху зона с полуперегородкой и двумя колонками со своими полками
 function zoneControls(card, s, H, cell = s, width = s.width, label = '', depth = 0) {
@@ -686,7 +669,7 @@ function drawSections() {
   const s = P.sections[sel], card = el('div', 'card'), H = innerH(P);
   const hasD = () => s.items.some(i => i.type === 'drawer');
   card.append(el('h3', '', `Секция ${sel + 1}`));
-  card.append(el('div', 'sumline', sectionSummary(s)));
+  card.append(el('div', 'sumline', sectionSummary(s, hinged())));
   const ch = (c, live) => { if (c.k === 'width' && live) { const lb = strip.children[sel]; lb.style.flex = s.width + ' 1 0'; lb.querySelector('span').textContent = s.width; } else drawSections(); render(!live && c.k === 'width'); };
   card.append(control({ k: 'width', l: 'Ширина (внутренняя)', min: r.secW[0], max: r.secW[1], step: 10, u: 'мм', hint: `Ширина между стенками секции, ${r.secW[0]}–${r.secW[1]} мм для этого типа. Общая ширина изделия = сумма секций + толщины стенок.` }, s, ch));
   card.append(control({ k: 'width', l: '', hint: 'Типовые ширины', seg: [400, 450, 500, 600, 800, 1000].filter(v => v >= r.secW[0] && v <= r.secW[1]).map(v => [v, String(v)]) }, s, ch));
@@ -818,7 +801,6 @@ function drawGlobal() {
 
 // ── модули проекта: несколько корпусов в одном проекте
 const modsBox = document.getElementById('mods');
-const keepColorsOf = () => ({ bodyColor: P.bodyColor, bodyName: P.bodyName, frontColor: P.frontColor, frontName: P.frontName, metalColor: P.metalColor });
 function afterModuleChange(frame = true) {
   active = Math.max(0, Math.min(active, moduleCount(root) - 1)); P = cabinetOf(root, active);
   sel = 0; selPartKey = null; kinKey = '';
@@ -826,7 +808,7 @@ function afterModuleChange(frame = true) {
 }
 function setActive(i) { if (i === active) return; active = i; afterModuleChange(false); }
 function resetActive() {
-  const fresh = makePreset(P.type, keepColorsOf());
+  const fresh = makePreset(P.type, keepColorsOf(P));
   if (active === 0) {
     const { modules, modName, modY, open, hideDoors, showHoles, asmStep } = root;
     for (const k of Object.keys(root)) delete root[k];
@@ -861,8 +843,8 @@ async function askAddModule() {
   if (!(await modal('Добавить модуль', body, { ok: 'Добавить', wide: true }))) return;
   act(() => {
     let i;
-    if (pick.type) i = addModule(root, makePreset(pick.type, keepColorsOf()), { name: typeLabel(pick.type), after: active, y: pick.type === 'kwall' ? 1400 : 0, over: pick.type === 'kwall' });
-    else { const r = instantiate(pick.template || pick.entry, keepColorsOf()); i = addModule(root, r.P, { name: r.name, after: active, y: r.y, over: r.over }); }
+    if (pick.type) i = addModule(root, makePreset(pick.type, keepColorsOf(P)), { name: typeLabel(pick.type), after: active, y: pick.type === 'kwall' ? 1400 : 0, over: pick.type === 'kwall' });
+    else { const r = instantiate(pick.template || pick.entry, keepColorsOf(P)); i = addModule(root, r.P, { name: r.name, after: active, y: r.y, over: r.over }); }
     if (i >= 0) active = i;
   })();
   afterModuleChange(true);
@@ -1035,7 +1017,7 @@ function drawAll() { drawModules(); drawSections(); drawGlobal(); }
 
 // ── exports
 const download = (data, name, type) => { const a = el('a'); a.href = URL.createObjectURL(new Blob([data], { type })); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); };
-const stamp = () => (proj.multi ? `proekt_${moduleCount(root)}mod_${Math.round(proj.spec.meta.W)}x${Math.round(proj.spec.meta.H)}x${Math.round(proj.spec.meta.D)}` : `${P.type}_${Math.round(spec.meta.W)}x${P.height}x${P.depth}`);
+const stamp = () => U.stampOf(proj, root, P, spec);
 // снимок 3D без рамки выбранной секции, уменьшенный до maxW (КП хранит снимок в localStorage, карточка проекта — миниатюру в IndexedDB)
 function shot(maxW) {
   const c = stage._renderer.domElement, k = Math.min(1, maxW / c.width), o = document.createElement('canvas');
@@ -1069,11 +1051,7 @@ const EXPORTS = {
   labels: () => openProd('#labels'),
   asm: () => openProd('#asm'),
   buy: () => openProd('#buy'),
-  csv: () => download(toCSV(proj.spec, proj.multi ? `Проект из ${moduleCount(root)} модулей ${Math.round(proj.spec.meta.W)} × ${Math.round(proj.spec.meta.H)} × ${Math.round(proj.spec.meta.D)} мм` : `${typeLabel(P.type)} ${Math.round(spec.meta.W)} × ${P.height} × ${P.depth} мм`), stamp() + '.csv', 'text/csv;charset=utf-8'),
-  dxf: () => download(toDXF(proj.spec), stamp() + '.dxf', 'application/dxf'),
-  cutcsv: () => download(toCutCSV(groupParts(proj.spec), { textured: l => isTextured(cat, l) }), stamp() + '_raskroy.csv', 'text/csv;charset=utf-8'),
-  cutmap: () => download(nestMapDXF(nestFor(proj.spec)), stamp() + '_karta_raskroya.dxf', 'application/dxf'),
-  drill: () => download(toDrillJSON(groupParts(proj.spec), { project: db[cur] ? db[cur].name : '', modules: moduleList(root).map(m => ({ name: m.name, type: cabinetOf(root, m.i).type })) }), stamp() + '_operacii.json', 'application/json'),
+  ...Object.fromEntries(FILE_EXPORTS.map(k => [k, () => { const f = buildExport(k, { proj, root, P, spec, cat, projectName: db[cur] ? db[cur].name : '' }); download(f.data, f.name, f.type); }])),
   obj: () => stage._runExport('obj'),
   glb: () => stage._runExport('glb'),
   cat: () => openCatalog(),
@@ -1182,10 +1160,7 @@ async function askText(title, value) {
 const info = (title, text) => { const b = el('div', 'dbody'); b.append(el('p', '', text)); return modal(title, b, { ok: 'Понятно', cancel: '' }); };
 
 // ── проекты
-const typeLabel = k => (TYPES.find(t => t[0] === k) || ['', ''])[1];
-const TYPE_INFO = { kcorner: 'Нижний угловой «Г» с глухим углом: два крыла, Г-образные дно и крышка, две двери (длина крыла A — ширина секции)', kfill: 'Доборная панель шириной от 20 мм: закрывает щель у стены или между корпусами', kbase: 'Нижний модуль на ножках: царги вместо крышки, полки или ящики, дверь', kwall: 'Навесной шкаф: неглубокий корпус на стену, дверь или подъёмный фасад', ktall: 'Пенал до потолка: полки и ящики, дверь', wardrobe: 'Штанги, полки, ящики; распашные двери или купе', rack: 'Открытые полки без дверей', nightstand: 'Невысокая тумба: ящики, полки, дверь', dresser: 'Широкая стопка ящиков', tv: 'Низкая и широкая, с нишами и ящиками' };
 const projDlg = document.getElementById('projDlg'), pm = document.getElementById('pm'), xm = document.getElementById('xm'), am = document.getElementById('am');
-const keepColors = () => ({ bodyColor: P.bodyColor, bodyName: P.bodyName, frontColor: P.frontColor, frontName: P.frontName, metalColor: P.metalColor });
 function drawHeader() {
   document.getElementById('pname').textContent = db[cur].name;
   document.getElementById('tbadge').textContent = typeLabel(P.type);
@@ -1201,7 +1176,7 @@ document.getElementById('xmenu').onclick = e => toggleMenu(xm, e);
 function openProject(id, skipSave) {
   if (!skipSave) { saveThumbNow(); save(); }
   cur = id; if (!placeholder) saveProjects(db, cur);
-  root = normalize(db[id].P); root.asmStep = 0; active = 0; P = root; selPartKey = null; hist.length = 0; redoSt.length = 0; editing = null; sel = 0; kinKey = ''; fixNote = null;
+  root = normalize(db[id].P); root.asmStep = 0; active = 0; P = root; selPartKey = null; history.clear(); sel = 0; kinKey = ''; fixNote = null;
   if (projDlg.open) projDlg.close();
   drawAll(); render(true); syncUndo();
 }
@@ -1252,14 +1227,6 @@ function showProjects() {
   if (!projDlg.open) projDlg.showModal();
 }
 projDlg.addEventListener('cancel', e => { if (placeholder) e.preventDefault(); });
-const two = n => String(n).padStart(2, '0');
-function fmtDate(t) {
-  const d = new Date(t), now = new Date(), day = x => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime(), diff = Math.round((day(now) - day(d)) / 864e5);
-  if (diff === 0) return `сегодня ${two(d.getHours())}:${two(d.getMinutes())}`;
-  if (diff === 1) return 'вчера';
-  return `${two(d.getDate())}.${two(d.getMonth() + 1)}.${d.getFullYear()}`;
-}
-const sizeOf = p => `${Math.round(p.sections.reduce((a, s) => a + s.width, 0) + (p.sections.length + 1) * p.thickness)}×${p.height}×${p.depth}`;
 function drawProjDlg() {
   thumbUrls.forEach(u => URL.revokeObjectURL(u)); thumbUrls = [];
   projDlg.innerHTML = '';
@@ -1311,7 +1278,7 @@ function drawNewProject() {
   });
   const nm = el('div', 'pname-in'); nm.append(el('label', '', 'Название'), input);
   input.oninput = () => { nameTouched = true; newName = input.value; };
-  const create = () => addProject(input.value.trim() || typeLabel(newType), makePreset(newType, keepColors()));
+  const create = () => addProject(input.value.trim() || typeLabel(newType), makePreset(newType, keepColorsOf(P)));
   input.onkeydown = e => { if (e.key === 'Enter') create(); };
   body.append(types, nm);
   const foot = el('div', 'dfoot'), ok = el('button', 'pri', 'Создать'), imp = el('button', '', 'Импорт .json…');
