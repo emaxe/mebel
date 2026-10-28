@@ -25,6 +25,7 @@ export function normalizeWorktop(w) {
       x: clamp(Math.round(num(c.x, 0)), 0, 6000), y: clamp(Math.round(num(c.y, 30)), 0, 1000), r: clamp(Math.round(num(c.r, 0)), 0, 100),
     })),
   };
+  if (typeof w.color === 'string' && /^#[0-9a-f]{6}$/i.test(w.color)) out.color = w.color;
   return out;
 }
 
@@ -60,7 +61,7 @@ export function worktopParts(mods, wt) {
       if (!far) frontEdge.z = Math.max(frontEdge.z ?? -Infinity, zBack + depth);
       if (ri === 0) for (const k of wt.cutouts) {
         const u0 = clamp(k.x, 0, Math.max(0, L - 10)), u1 = Math.min(L, u0 + k.w), v1 = clamp(depth - k.y, 10, depth), v0 = Math.max(0, v1 - k.h);
-        if (u1 - u0 >= 10 && v1 - v0 >= 10) cuts.push({ kind: 'hole', u0, v0, u1, v1, r: Math.min(k.r, (u1 - u0) / 2, (v1 - v0) / 2), what: CUTOUT_PRESETS[k.kind].label });
+        if (u1 - u0 >= 10 && v1 - v0 >= 10) cuts.push({ kind: 'hole', fixture: k.kind, u0, v0, u1, v1, r: Math.min(k.r, (u1 - u0) / 2, (v1 - v0) / 2), what: CUTOUT_PRESETS[k.kind].label });
       }
     } else {
       const m0 = run[0], right = m0.rot < 0;
@@ -130,4 +131,35 @@ export function worktopWarnings(parts) {
     });
   }
   return out;
+}
+
+const FIXTURE_NAME = { sink: 'Мойка кухонная врезная', hob: 'Варочная панель' };
+
+/**
+ * Покупные приборы в вырезах столешницы: extras для 3D (мм, общие координаты) и позиции фурнитуры для списка покупок.
+ * Мойка — чаша со смесителем, варочная панель — плита с четырьмя конфорками.
+ */
+export function worktopFixtures(parts) {
+  const extras = [], hwx = [];
+  for (const p of parts) {
+    if (p.name !== 'Столешница') continue;
+    const top = p.c[1] + p.T / 2;
+    for (const c of p.cutouts || []) {
+      if (!FIXTURE_NAME[c.fixture]) continue;
+      const w = c.u1 - c.u0, h = c.v1 - c.v0, cx = p.c[0] - p.L / 2 + (c.u0 + c.u1) / 2, cz = p.c[2] - p.W / 2 + (c.v0 + c.v1) / 2;
+      const name = `${FIXTURE_NAME[c.fixture]} ${Math.round(w)}×${Math.round(h)} мм`;
+      const e = o => extras.push({ asm: 'final', ...o });
+      if (c.fixture === 'sink') {
+        const bowl = Math.min(180, p.T + 140);
+        e({ kind: 'box', mat: 'steel', s: [w - 30, bowl, h - 30], c: [cx, top - 12 - bowl / 2, cz] });
+        e({ kind: 'cyl', mat: 'metal', r: 16, len: 240, c: [cx, top + 120, cz - h / 2 + 60], axis: 'y' });
+        e({ kind: 'cyl', mat: 'metal', r: 10, len: 150, c: [cx, top + 235, cz - h / 2 + 125], axis: 'z' });
+      } else {
+        e({ kind: 'box', mat: 'dark', s: [w + 20, 6, h + 20], c: [cx, top + 3, cz] });
+        for (const [dx, dz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) e({ kind: 'cyl', mat: 'steel', r: Math.min(w, h) * 0.17, len: 1.5, c: [cx + dx * w * 0.24, top + 6.8, cz + dz * h * 0.24], axis: 'y' });
+      }
+      hwx.push({ kind: 'appliance', name, qty: 1, stage: 'final' });
+    }
+  }
+  return { extras, hwx };
 }

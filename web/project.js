@@ -4,7 +4,7 @@ import { buildSpec } from './model.js';
 import { normalize, MAX_MODULES } from './rules.js';
 import { roomFrame, roomWarnings, rowExtent } from './room.js';
 import { makePreset } from './rules.js';
-import { normalizeWorktop, worktopParts, worktopWarnings } from './worktop.js';
+import { normalizeWorktop, worktopParts, worktopWarnings, worktopFixtures } from './worktop.js';
 
 const clone = o => JSON.parse(JSON.stringify(o));
 const PRIMARY_KEYS = ['modules', 'modName', 'modY'];
@@ -135,6 +135,18 @@ export function buildProject(root, opts = {}) {
   return { ...r, room, frame: roomFrame(r, room), warnings: [...r.warnings, ...rw], spec: rw.length ? { ...r.spec, warnings: [...r.spec.warnings, ...rw] } : r.spec };
 }
 
+/** Позиции фурнитуры проекта плюс покупные приборы столешницы (одинаковые название и этап складываются). */
+function mergeHwx(list, extra) {
+  const out = list.map(e => ({ ...e }));
+  for (const x of extra) { const e = out.find(y => y.name === x.name && y.stage === x.stage); if (e) e.qty += x.qty; else out.push({ ...x }); }
+  return out;
+}
+function mergeHw(list, extra) {
+  const m = new Map(list);
+  for (const x of extra) m.set(x.name, (m.get(x.name) || 0) + x.qty);
+  return [...m.entries()];
+}
+
 function buildLayout(root, { hwFor } = {}) {
   const list = moduleList(root);
   const mods = list.map(m => ({ ...m, spec: buildSpec(m.P, { ...(hwFor ? { hw: hwFor(m.P) } : {}), ...(m.i && root.overrides ? { inherit: root.overrides } : {}) }) }));
@@ -142,8 +154,9 @@ function buildLayout(root, { hwFor } = {}) {
   if (mods.length === 1) {
     const m = { ...mods[0], x: 0, y: 0, z: 0, rot: 0, run: 0, s: 0, left: 0, W: mods[0].spec.meta.W, H: mods[0].spec.meta.H, D: mods[0].spec.meta.D };
     const worktops = worktopParts([m], wt);
-    const warnings = worktopWarnings(worktops);
-    return { mods: [m], spec: worktops.length ? { ...m.spec, parts: [...m.spec.parts, ...worktops], warnings: [...m.spec.warnings, ...warnings] } : m.spec, multi: false, worktops, warnings };
+    const warnings = worktopWarnings(worktops), fixtures = worktopFixtures(worktops);
+    const spec = worktops.length ? { ...m.spec, parts: [...m.spec.parts, ...worktops], hwx: mergeHwx(m.spec.hwx, fixtures.hwx), hw: mergeHw(m.spec.hw, fixtures.hwx), warnings: [...m.spec.warnings, ...warnings] } : m.spec;
+    return { mods: [m], spec, multi: false, worktops, fixtures, warnings };
   }
 
   // раскладка: основной ряд вдоль стены A; модуль с turn начинает второй ряд вдоль соседней стены (угол справа или слева)
@@ -191,14 +204,14 @@ function buildLayout(root, { hwFor } = {}) {
   if (turn && cornerMod && cornerMod.P.cornerSide !== (turn === 'L' ? 'left' : 'right')) warnings.push(`${cornerMod.name}: угол ${cornerMod.P.cornerSide === 'right' ? 'справа' : 'слева'}, а второй ряд повёрнут ${turn === 'L' ? 'влево' : 'вправо'}: развернитесь в одну сторону`);
   const worktops = worktopParts(mods, wt);
   parts.push(...worktops);
-  const wtWarn = worktopWarnings(worktops);
+  const wtWarn = worktopWarnings(worktops), fixtures = worktopFixtures(worktops);
   warnings.push(...wtWarn);
   const H = Math.max(...mods.map(m => m.y + m.H));
   const spec = {
-    parts, extras, hwx: [...hwx.values()], hw: [...hw.entries()], warnings,
+    parts, extras, hwx: mergeHwx([...hwx.values()], fixtures.hwx), hw: mergeHw([...hw.entries()], fixtures.hwx), warnings,
     meta: { W: total, H, D: Dmax, yB: 0, yT: H, ih: H, sections: [], modules: mods.map(m => ({ i: m.i, name: m.name, x: m.x, y: m.y, z: m.z, rot: m.rot, run: m.run, W: m.W, H: m.H, D: m.D, meta: m.spec.meta })) },
   };
-  return { mods, spec, multi: true, worktops, warnings: wtWarn };
+  return { mods, spec, multi: true, worktops, fixtures, warnings: wtWarn };
 }
 
 /** Закрыть остаток стены A фальшпанелью: после последнего модуля ряда. Возвращает { ok, width } или { ok: false, reason }. Для ряда с углом справа не поддерживается. */

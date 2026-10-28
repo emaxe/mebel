@@ -872,6 +872,8 @@ async function editWorktop() {
     if (!on) return;
     const row = el('div', 'wtrow'); row.append(lab('Толщина, мм', num(wt, 'T', 16, 60)), lab('Свес спереди, мм', num(wt, 'front', 0, 100)), lab('Свес по бокам, мм', num(wt, 'side', 0, 100))); body.append(row);
     const row2 = el('div', 'wtrow'); row2.append(lab('Бортик, мм (0 — нет)', num(wt, 'skirtH', 0, 150)), lab('Фартук, мм (0 — нет)', num(wt, 'apron', 0, 1000))); body.append(row2, el('p', 'hint2', 'Бортик из материала столешницы стоит у стены (от 20 мм); фартук — панель ХДФ 4 мм над столешницей до навесных шкафов.'));
+    const colorIn = Object.assign(el('input'), { type: 'color', value: wt.color || '#6d6a66', onchange() { wt.color = this.value; } });
+    const row3 = el('div', 'wtrow'); row3.append(lab('Цвет в 3D', colorIn)); body.append(row3);
     body.append(el('h4', '', 'Вырезы'));
     wt.cutouts.forEach((c, i) => {
       const r = el('div', 'wtcut'); r.append(el('b', '', (CUTOUT_PRESETS[c.kind] || CUTOUT_PRESETS.free).label), lab('Ширина', num(c, 'w', 20, 2000)), lab('Глубина', num(c, 'h', 20, 1000)), lab('От левого края', num(c, 'x', 0, 6000)), lab('От переднего края', num(c, 'y', 0, 1000)), lab('Радиус', num(c, 'r', 0, 100)));

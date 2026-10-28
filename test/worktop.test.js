@@ -180,3 +180,48 @@ describe('столешница угловой кухни', () => {
     expect(rots.slice(0, 2).every(v => v === 0)).toBe(true); expect(rots.slice(2).every(v => Math.abs(v + Math.PI / 2) < 1e-9)).toBe(true);
   });
 });
+
+describe('мойка и варочная панель как объекты', () => {
+  const cuts = [{ kind: 'sink', w: 500, h: 400, x: 100, y: 60, r: 20 }, { kind: 'hob', w: 560, h: 490, x: 700, y: 50, r: 8 }];
+  const setup = () => { const r = kitchen({ cutouts: cuts }); return { r, pr: buildProject(r) }; };
+  it('вид выреза сохраняется в детали', () => {
+    const [t] = top(setup().pr);
+    expect(t.cutouts.map(c => c.fixture)).toEqual(['sink', 'hob']);
+  });
+  it('приборы идут в фурнитуру проекта с категорией «техника»', () => {
+    const { pr } = setup(), names = pr.spec.hwx.filter(e => e.kind === 'appliance').map(e => e.name);
+    expect(names.length).toBe(2);
+    expect(names.some(n => /^Мойка/.test(n))).toBe(true);
+    expect(names.some(n => /^Варочная панель/.test(n))).toBe(true);
+    expect(pr.spec.hw.some(([k]) => /^Мойка/.test(k))).toBe(true);
+  });
+  it('свободный вырез прибором не считается', () => {
+    const r = kitchen({ cutouts: [{ kind: 'free', w: 100, h: 100, x: 100, y: 60, r: 0 }] });
+    expect(buildProject(r).fixtures.hwx).toEqual([]);
+  });
+  it('в 3D чаша мойки и плита варки лежат в пределах столешницы', () => {
+    const { r, pr } = setup(), grp = build3DProject(THREE, pr, r), names = [];
+    grp.traverse(o => { if (o.isMesh && o.userData.mod === -1) names.push(o.material.name); });
+    expect(names).toContain('nerzhaveyka');
+    expect(names).toContain('cherny');
+  });
+  it('на плане вырезы видны с подписями', async () => {
+    const { planView } = await import('../web/plan.js');
+    const svg = planView(setup().pr);
+    expect(svg).toMatch(/data-cutout="sink"/);
+    expect(svg).toMatch(/data-cutout="hob"/);
+    expect(svg).toMatch(/Мойка/);
+  });
+  it('цвет столешницы нормализуется и попадает в материал', () => {
+    expect(normalizeWorktop({ color: '#aabbcc' }).color).toBe('#aabbcc');
+    expect(normalizeWorktop({ color: 'red' }).color).toBeUndefined();
+    const r = kitchen({ cutouts: [], color: '#aa0000' }), grp = build3DProject(THREE, buildProject(r), r);
+    let col = null; grp.traverse(o => { if (o.isMesh && o.userData.mod === -1 && o.material.name === 'stoleshnitsa') col = o.material.color.getHexString(); });
+    expect(col).toBe('aa0000');
+  });
+  it('в списке покупок есть техника', async () => {
+    const { shoppingList } = await import('../web/fittings.js');
+    const lines = shoppingList(setup().pr.spec, clone(DEFAULT_CATALOG), {});
+    expect(lines.filter(l => l.kind === 'appliance').length).toBe(2);
+  });
+});

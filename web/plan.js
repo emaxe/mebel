@@ -17,6 +17,12 @@ export function planView(proj, { width = 900 } = {}) {
   let s = `<svg viewBox="0 0 ${width} ${H}" style="width:100%;max-width:${width}px;background:#fff" font-family="Helvetica,Arial,sans-serif" font-size="11" data-plan="1">`;
   if (rb) s += `<rect x="${X(rb[0])}" y="${Z(rb[2])}" width="${(rb[1] - rb[0]) * sc}" height="${(rb[3] - rb[2]) * sc}" fill="#fbfaf6" stroke="#bdb8ab" stroke-width="1" data-room="1"/>`;
   for (const p of tb) s += `<rect x="${X(p[0])}" y="${Z(p[2])}" width="${(p[1] - p[0]) * sc}" height="${(p[3] - p[2]) * sc}" fill="#e9e6e0" stroke="#6d6a66" stroke-width="1" stroke-dasharray="6 3" data-worktop="1"/>`;
+  const FIX = { sink: 'Мойка', hob: 'Варка', free: 'Вырез' };
+  for (const p of tops) for (const c of p.cutouts || []) {
+    const cx0 = p.c[0] - p.L / 2 + c.u0, cz0 = p.c[2] - p.W / 2 + c.v0, cw = (c.u1 - c.u0) * sc, ch = (c.v1 - c.v0) * sc, kind = c.fixture || 'free';
+    s += `<rect x="${X(cx0)}" y="${Z(cz0)}" width="${cw}" height="${ch}" rx="${Math.min(c.r * sc, cw / 2, ch / 2)}" fill="${kind === 'sink' ? '#dbe7ee' : kind === 'hob' ? '#4a4d52' : '#fff'}" stroke="#6d6a66" stroke-width="1" data-cutout="${kind}"/>`;
+    if (cw > 34 && ch > 14) s += `<text x="${X(cx0) + cw / 2}" y="${Z(cz0) + ch / 2 + 3}" text-anchor="middle" font-size="9" fill="${kind === 'hob' ? '#fff' : '#1f1e1b'}">${FIX[kind]}</text>`;
+  }
   mods.forEach((m, i) => {
     const b = boxes[i], over = !!m.over, bx = X(b[0]), bz = Z(b[2]), bw = (b[1] - b[0]) * sc, bh = (b[3] - b[2]) * sc;
     s += `<rect x="${bx}" y="${bz}" width="${bw}" height="${bh}" fill="${over ? 'none' : '#f6f3ec'}" stroke="#1f1e1b" stroke-width="${over ? 1 : 1.6}" ${over ? 'stroke-dasharray="3 3"' : ''} data-mod="${m.i}"/>`;
